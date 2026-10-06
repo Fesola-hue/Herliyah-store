@@ -1,5 +1,7 @@
 import { Hono, type Context, type Next } from "hono";
-import { reserveBasketAtomically } from "./reservation-service";
+import { consumeReservation, reserveBasketAtomically } from "./reservation-service";
+import { products as previewProducts } from "../lib/catalog";
+import { PaystackTestAdapter } from "./payment-adapter";
 
 type Bindings = { DB?: D1Database; PRODUCT_IMAGES?: R2Bucket; PAYSTACK_SECRET_KEY?: string; APP_MODE?: "preview" | "test" | "production"; OWNER_EMAIL?: string };
 type ApiContext = Context<{ Bindings: Bindings }>;
@@ -104,4 +106,48 @@ api.post("/checkout/reserve", async c => {
   const orderId = crypto.randomUUID(), reservationId = crypto.randomUUID();
   try { return c.json(await reserveBasketAtomically(c.env.DB, { orderId, reservationId, idempotencyKey: body.idempotencyKey, expiresAt: new Date(Date.now() + 20 * 60_000).toISOString(), lines: body.lines }), 201); }
   catch (error) { console.error(JSON.stringify({ message: "reservation_failed", orderId, error: error instanceof Error ? error.message : "unknown" })); return c.json({ error: "basket_unavailable" }, 409); }
+});
+
+const PREVIEW_DELIVERY_FEE_KOBO = 500000;
+api.post("/checkout/quote", async c => {
+  const body = await c.req.json<{ lines?: { variantId: string; quantity: number }[] }>();
+  if (!Array.isArray(body.lines) || !body.lines.length) return c.json({ error: "empty_basket" }, 400);
+  const items = [] as { productId:string; variantId:string; name:string; image:string; colour:string; size:string; quantity:number; unitPriceKobo:number; lineTotalKobo:number; preparationMinDays:number; preparationMaxDays:number }[];
+  for (const line of body.lines) {
+    if (!Number.isInteger(line.quantity) || line.quantity < 1) return c.json({ error: "invalid_quantity" }, 400);
+    const product = previewProducts.find(item => item.variants.some(variant => variant.id === line.variantId));
+    const variant = product?.variants.find(item => item.id === line.variantId);
+    if (!product || !variant || !variant.open || variant.capacity < line.quantity) return c.json({ error: "basket_unavailable" }, 409);
+    items.push({ productId:product.id, variantId:variant.id, name:product.name, image:product.image, colour:variant.colour, size:variant.size, quantity:line.quantity, unitPriceKobo:product.priceKobo, lineTotalKobo:product.priceKobo*line.quantity, preparationMinDays:product.preparation.min, preparationMaxDays:product.preparation.max });
+  }
+  const subtotalKobo = items.reduce((sum,item)=>sum+item.lineTotalKobo,0);
+  return c.json({ currency:"NGN", items, subtotalKobo, deliveryFeeKobo:PREVIEW_DELIVERY_FEE_KOBO, totalKobo:subtotalKobo+PREVIEW_DELIVERY_FEE_KOBO, courierEstimate:"2–5 business days after dispatch", paymentsEnabled:false });
+});
+
+api.post("/checkout/preview-confirm", async c => {
+  const body = await c.req.json<{ idempotencyKey?:string; email?:string }>();
+  if (!body.idempotencyKey || !body.email?.includes("@")) return c.json({ error:"invalid_checkout" },400);
+  return c.json({ status:"pending", reference:`preview-${body.idempotencyKey.slice(0,12)}`, message:"No payment was created. Live and test provider calls remain disabled in preview mode." });
+});
+
+api.get("/checkout/payments/:reference", async c => {
+  if ((c.env.APP_MODE ?? "preview") !== "test") return c.json({ status:"pending", paymentsEnabled:false, message:"Payment verification is disabled in preview mode." });
+  if (!c.env.DB) return unavailable(c,"database");
+  if (!c.env.PAYSTACK_SECRET_KEY?.startsWith("sk_test_")) return c.json({ error:"test_payment_not_configured" },503);
+  const reference=c.req.param("reference"),attempt=await c.env.DB.prepare("SELECT id,order_id,amount_kobo,currency,environment,status FROM payment_attempts WHERE reference=?").bind(reference).first<{id:string;order_id:string;amount_kobo:number;currency:string;environment:string;status:string}>();
+  if (!attempt) return c.json({ error:"payment_not_found" },404);
+  if (attempt.status==="succeeded") return c.json({ status:"succeeded",reference,replayed:true });
+  const verified=await new PaystackTestAdapter(c.env.PAYSTACK_SECRET_KEY).verify(reference);
+  if (verified.amountKobo!==attempt.amount_kobo||verified.currency!==attempt.currency||verified.environment!=="test"||attempt.environment!=="test") {
+    await c.env.DB.prepare("UPDATE payment_attempts SET status='exception',provider_payload_json=?,updated_at=? WHERE id=?").bind(JSON.stringify(verified),new Date().toISOString(),attempt.id).run();
+    return c.json({ error:"payment_verification_mismatch",status:"exception" },409);
+  }
+  const now=new Date().toISOString();
+  await c.env.DB.prepare("UPDATE payment_attempts SET status=?,provider_payload_json=?,updated_at=? WHERE id=? AND status!='succeeded'").bind(verified.status,JSON.stringify(verified),now,attempt.id).run();
+  if (verified.status==="succeeded") {
+    const reservation=await c.env.DB.prepare("SELECT id FROM reservations WHERE order_id=? AND status='active'").bind(attempt.order_id).first<{id:string}>();
+    if (reservation) await consumeReservation(c.env.DB,reservation.id);
+    await c.env.DB.prepare("UPDATE orders SET order_status='paid',updated_at=? WHERE id=?").bind(now,attempt.order_id).run();
+  }
+  return c.json({ status:verified.status,reference,replayed:false });
 });

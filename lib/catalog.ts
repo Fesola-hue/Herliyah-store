@@ -1,5 +1,6 @@
 export type Variant = { id: string; size: "XS" | "S" | "M" | "L" | "XL"; colour: string; capacity: number; open: boolean };
-export type Product = { id: string; slug: string; name: string; category: "Dresses" | "Sets" | "Separates" | "Occasion"; description: string; priceKobo: number; image: string; accent: string; preparation: { min: number; max: number; basis: "business days" }; variants: Variant[] };
+export type ProductImage = { src:string; alt:string; colour?:string };
+export type Product = { id: string; slug: string; name: string; category: "Dresses" | "Sets" | "Separates" | "Occasion"; description: string; priceKobo: number; image: string; images: ProductImage[]; published:boolean; accent: string; preparation: { min: number; max: number; basis: "business days" }; variants: Variant[] };
 const sizes: Variant["size"][] = ["XS", "S", "M", "L", "XL"];
 function variants(product: string, colours: string[], closed: string[] = []): Variant[] { return colours.flatMap((colour, ci) => sizes.map((size, si) => ({ id: `${product}-${colour.toLowerCase().replace(/\s/g,"-")}-${size.toLowerCase()}`, size, colour, capacity: Math.max(0, 8-si-ci*2), open: !closed.includes(`${colour}-${size}`) }))); }
 export const products: Product[] = [
@@ -13,7 +14,8 @@ export const products: Product[] = [
   ["008","ada-soft-jacket","Ada Soft Jacket","Separates","Unstructured tailoring with a long line and a clean, single closure.",6800000,"/hero-cream.png","Cream",10,15,["Cream","Olive"],[]],
   ["009","tomi-skirt-set","Tomi Skirt Set","Sets","A fitted shell and sweeping skirt designed as one composed gesture.",10200000,"/flatlay-cocoa.png","Cocoa",12,17,["Cocoa","Black"],[]],
   ["010","lola-pleated-dress","Lola Pleated Dress","Dresses","Precise pleats open into a relaxed ankle-length silhouette.",8900000,"/look-olive.png","Deep olive",11,15,["Deep olive","Cream"],[]],
-].map((p) => { const [id,slug,name,category,description,priceKobo,image,accent,min,max,colours,closed]=p as [string,string,string,Product["category"],string,number,string,string,number,number,string[],string[]]; return { id:`sample-${id}`,slug,name,category,description,priceKobo,image,accent,preparation:{min,max,basis:"business days"},variants:variants(slug,colours,closed) }; });
+].map((p) => { const [id,slug,name,category,description,priceKobo,image,accent,min,max,colours,closed]=p as [string,string,string,Product["category"],string,number,string,string,number,number,string[],string[]]; const published=["001","002","003"].includes(id),auditedColours=published?[accent]:colours; return { id:`sample-${id}`,slug,name,category,description,priceKobo,image,images:[{src:image,alt:`Sample editorial photograph for ${name}`,colour:accent}],published,accent,preparation:{min,max,basis:"business days"},variants:variants(slug,auditedColours,closed) }; });
+export const publishedProducts=products.filter(product=>product.published);
 export const formatNaira = (kobo:number) => new Intl.NumberFormat("en-NG",{style:"currency",currency:"NGN",maximumFractionDigits:0}).format(kobo/100);
 export type CartItem = { variantId:string; productId:string; quantity:number };
 export const mockCatalogAdapter = { async listProducts(){return products}, async getProduct(slug:string){return products.find(p=>p.slug===slug)??null} };

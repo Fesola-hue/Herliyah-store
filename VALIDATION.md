@@ -20,6 +20,14 @@
 - Fresh full-page screenshots are stored in `.visual-qa/product-mobile/`, including `full-360-amara.png` and `full-390-amara.png`. The Amara, shortest-name and longest-name captures were visually inspected after the interaction run.
 - The focused browser run recorded no console errors. Unit tests (3/3) and the production build also passed after the layout changes.
 
+## Homepage, gallery, browsing and checkout pass
+
+- Headless Edge rendered and captured the storefront at 1366×768, 1440×900, 360×780 and 390×844. The homepage headline and collection action were fully inside the initial viewport at all four sizes, with no horizontal overflow.
+- The published catalog was reduced to the three designs with defensible assigned imagery. Each published product now exposes one audited design/colour photograph; unrelated universal gallery imagery was removed. Remaining sample designs stay as unpublished drafts pending suitable photography.
+- The interaction sweep selected gallery thumbnails where present, colour and size, added to bag, increased and decreased cart quantity, navigated through a related design, and returned to the original filtered/search result. Search and filter query state survived both product transitions.
+- Checkout validation, saved customer fields after reload, backend-calculated subtotal/delivery/total, guarded duplicate submission and the pending preview confirmation all passed at every viewport. No live payment or inventory reservation was created.
+- Four complete end-to-end viewport runs passed with zero browser-console errors. Fresh initial and full-page captures are stored in `.visual-qa/storefront-flow/`.
+
 ## Environment limitations
 
 - Browser verification used the live Vinext development server against the same React source. Hosted D1/R2 migration and owner-write checks remain dependent on publication and runtime configuration.
