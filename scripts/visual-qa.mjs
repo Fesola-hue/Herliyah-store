@@ -66,6 +66,12 @@ for (const viewport of viewports) {
     } else {
       const shot = await send("Page.captureScreenshot", { format: "png", fromSurface: true });
       await writeFile(join(out, `${viewport.width}-${slug}.png`), Buffer.from(shot.data, "base64"));
+      if (slug === "home") {
+        const metrics = await send("Page.getLayoutMetrics");
+        const contentHeight = Math.ceil(metrics.cssContentSize.height);
+        const fullShot = await send("Page.captureScreenshot", { format: "png", fromSurface: true, captureBeyondViewport: true, clip: { x: 0, y: 0, width: viewport.width, height: contentHeight, scale: 1 } });
+        await writeFile(join(out, `full-${viewport.width}-${slug}.png`), Buffer.from(fullShot.data, "base64"));
+      }
     }
     results.push({ route, ...viewport, ...data });
   }

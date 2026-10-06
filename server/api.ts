@@ -1,5 +1,5 @@
 import { Hono, type Context, type Next } from "hono";
-import { consumeReservation, reserveBasketAtomically } from "./reservation-service";
+import { consumeReservation, releaseExpiredReservations, reserveBasketAtomically } from "./reservation-service";
 import { products as previewProducts } from "../lib/catalog";
 import { PaystackTestAdapter } from "./payment-adapter";
 
@@ -97,6 +97,11 @@ api.post("/admin/products/:id/images", async c => {
     await c.env.DB.prepare("INSERT INTO product_images (id,product_id,object_key,alt_text,sort_order,is_cover,created_at) VALUES (?,?,?,?,COALESCE((SELECT MAX(sort_order)+1 FROM product_images WHERE product_id=?),0),0,?)").bind(imageId, c.req.param("id"), key, c.req.query("alt")?.trim() || "Product image", c.req.param("id"), new Date().toISOString()).run();
   } catch (error) { await c.env.PRODUCT_IMAGES.delete(key); throw error; }
   return c.json({ id: imageId, url: `/api/media/${encodeURIComponent(key)}` }, 201);
+});
+
+api.post("/admin/reservations/release-expired", async c => {
+  if (!c.env.DB) return unavailable(c, "database");
+  return c.json(await releaseExpiredReservations(c.env.DB));
 });
 
 api.post("/checkout/reserve", async c => {

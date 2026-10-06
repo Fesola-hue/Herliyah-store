@@ -11,6 +11,7 @@
 - The generated screenshots were visually inspected for editorial-image text contrast, model visibility, content-edge consistency, responsive type scale, product-card readability, hero crop and vertical rhythm.
 - Product variant selection, add-to-bag, cart rendering, cart persistence after reload and shop search passed at 390px and 1440px. The mobile filter panel also passed category Apply, active-filter display, individual removal and Clear behaviour at 390px.
 - No runtime exceptions or browser-console error entries were recorded during the 40-screen sweep.
+- Phase 3 reservation recovery tests cover one-time expiry release and ensure consumed reservations cannot be released or committed twice.
 - The production build completed after the Phase 2 foundation added D1/R2 bindings, owner-authenticated admin routing, catalog/admin APIs, audited product and capacity updates, and product-image storage.
 
 ## Focused mobile product-page pass
@@ -23,7 +24,7 @@
 ## Homepage, gallery, browsing and checkout pass
 
 - Headless Edge rendered and captured the storefront at 1366×768, 1440×900, 360×780 and 390×844. The homepage headline and collection action were fully inside the initial viewport at all four sizes, with no horizontal overflow.
-- The published catalog was reduced to the three designs with defensible assigned imagery. Each published product now exposes one audited design/colour photograph; unrelated universal gallery imagery was removed. Remaining sample designs stay as unpublished drafts pending suitable photography.
+- The shop retains all ten clearly labelled sample designs, while the homepage deliberately features the first four. Each sample product exposes one assigned design/colour photograph; replacement merchandise photography is still required before launch.
 - The interaction sweep selected gallery thumbnails where present, colour and size, added to bag, increased and decreased cart quantity, navigated through a related design, and returned to the original filtered/search result. Search and filter query state survived both product transitions.
 - Checkout validation, saved customer fields after reload, backend-calculated subtotal/delivery/total, guarded duplicate submission and the pending preview confirmation all passed at every viewport. No live payment or inventory reservation was created.
 - Four complete end-to-end viewport runs passed with zero browser-console errors. Fresh initial and full-page captures are stored in `.visual-qa/storefront-flow/`.
