@@ -1,0 +1,7 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+
+class CapacityLedger{constructor(rows){this.rows=new Map(rows.map(r=>[r.id,{...r}]));this.keys=new Map()}reserve(key,lines){if(this.keys.has(key))return this.keys.get(key);for(const line of lines){const row=this.rows.get(line.id);if(!row||!row.open||row.capacity-row.reserved-row.committed<line.quantity)throw new Error("basket_unavailable")}for(const line of lines)this.rows.get(line.id).reserved+=line.quantity;const id=`order-${this.keys.size+1}`;this.keys.set(key,id);return id}}
+test("whole basket reserves atomically",()=>{const ledger=new CapacityLedger([{id:"a",capacity:2,reserved:0,committed:0,open:true},{id:"b",capacity:0,reserved:0,committed:0,open:true}]);assert.throws(()=>ledger.reserve("key-1",[{id:"a",quantity:1},{id:"b",quantity:1}]),/basket_unavailable/);assert.equal(ledger.rows.get("a").reserved,0)});
+test("last unit cannot be allocated twice",()=>{const ledger=new CapacityLedger([{id:"a",capacity:1,reserved:0,committed:0,open:true}]);ledger.reserve("key-1",[{id:"a",quantity:1}]);assert.throws(()=>ledger.reserve("key-2",[{id:"a",quantity:1}]),/basket_unavailable/)});
+test("idempotency key replays the original order",()=>{const ledger=new CapacityLedger([{id:"a",capacity:2,reserved:0,committed:0,open:true}]);const first=ledger.reserve("key-1",[{id:"a",quantity:1}]);const replay=ledger.reserve("key-1",[{id:"a",quantity:1}]);assert.equal(replay,first);assert.equal(ledger.rows.get("a").reserved,1)});
