@@ -13,6 +13,13 @@
 - No runtime exceptions or browser-console error entries were recorded during the 40-screen sweep.
 - The production build completed after the Phase 2 foundation added D1/R2 bindings, owner-authenticated admin routing, catalog/admin APIs, audited product and capacity updates, and product-image storage.
 
+## Focused mobile product-page pass
+
+- Rechecked the Amara Drape Dress, Tomi Skirt Set (short name) and Eniola Wide Trouser (long name) at both 360px and 390px: six product/viewport combinations passed with no horizontal overflow or clipped purchase controls.
+- At every viewport, automation tapped every colour, every available size, the size-guide toggle, quantity, wishlist and Add to Bag. The selected variants, quantity change, wishlist state, cart count and confirmation message were verified.
+- Fresh full-page screenshots are stored in `.visual-qa/product-mobile/`, including `full-360-amara.png` and `full-390-amara.png`. The Amara, shortest-name and longest-name captures were visually inspected after the interaction run.
+- The focused browser run recorded no console errors. Unit tests (3/3) and the production build also passed after the layout changes.
+
 ## Environment limitations
 
 - Browser verification used the live Vinext development server against the same React source. Hosted D1/R2 migration and owner-write checks remain dependent on publication and runtime configuration.
