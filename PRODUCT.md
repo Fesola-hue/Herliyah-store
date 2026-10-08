@@ -20,18 +20,18 @@ This is a real ecommerce product, not only a landing page. A polished interface 
 
 ## 3. First-release scope
 
-| Area | Required behaviour |
-|---|---|
-| Homepage | Brand identity, collection introduction, featured products, clear shopping action, concise brand story, useful footer |
-| Shop | Published designs, prices, availability, filters by size/category where useful, sorting, friendly empty states |
-| Product page | Image gallery, description, price, variant choice, size guide, care information, clear preorder badge and style-specific preparation window, delivery/returns links, quantity selection |
-| Cart | Edit/remove items, persistent local cart, item and subtotal display, capacity revalidation |
-| Checkout | Guest details, address, configured delivery option and fee, final total, Paystack payment |
-| Confirmation | Secure guest order access, payment state, purchased items and preparation-window snapshots, production and delivery progress |
-| Customer accounts | Optional signup/login, verified ownership of orders, order history/progress, persistent wishlist; never required to purchase |
-| Admin | Secure login, product editing, image upload/reordering, variants, capacity adjustments, order management, settings |
-| Notifications | Customer confirmation and owner new-order email with retry support |
-| Operations | Payment reconciliation, reservations, audit history, backups, error monitoring |
+| Area              | Required behaviour                                                                                                                                                                      |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Homepage          | Brand identity, collection introduction, featured products, clear shopping action, concise brand story, useful footer                                                                   |
+| Shop              | Published designs, prices, availability, filters by size/category where useful, sorting, friendly empty states                                                                          |
+| Product page      | Image gallery, description, price, variant choice, size guide, care information, clear preorder badge and style-specific preparation window, delivery/returns links, quantity selection |
+| Cart              | Edit/remove items, persistent local cart, item and subtotal display, capacity revalidation                                                                                              |
+| Checkout          | Guest details, address, configured delivery option and fee, final total, Paystack payment                                                                                               |
+| Confirmation      | Secure guest order access, payment state, purchased items and preparation-window snapshots, production and delivery progress                                                            |
+| Customer accounts | Optional signup/login, verified ownership of orders, order history/progress, persistent wishlist; never required to purchase                                                            |
+| Admin             | Secure login, product editing, image upload/reordering, variants, capacity adjustments, order management, settings                                                                      |
+| Notifications     | Customer confirmation and owner new-order email with retry support                                                                                                                      |
+| Operations        | Payment reconciliation, reservations, audit history, backups, error monitoring                                                                                                          |
 
 **Defer:** reviews, loyalty, discounts, gift cards, abandoned-cart campaigns, live courier integrations, international currency, multi-warehouse stock, marketplace features, AI tools, advanced analytics. Keep the model extensible without building these now.
 
@@ -119,13 +119,13 @@ Paystack processes payments; our backend owns order totals, confirmation, invent
 
 Keep these state dimensions separate:
 
-| Dimension | Suggested states |
-|---|---|
-| Order | awaiting_payment, confirmed, cancelled, closed |
-| Payment attempt | initiated, pending, succeeded, failed, exception |
-| Reservation | active, consumed, released |
-| Fulfilment | awaiting_production, in_production, quality_check, ready_to_dispatch, dispatched, delivered, cancelled, delayed, exception |
-| Refund record | requested, pending, succeeded, failed |
+| Dimension       | Suggested states                                                                                                           |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Order           | awaiting_payment, confirmed, cancelled, closed                                                                             |
+| Payment attempt | initiated, pending, succeeded, failed, exception                                                                           |
+| Reservation     | active, consumed, released                                                                                                 |
+| Fulfilment      | awaiting_production, in_production, quality_check, ready_to_dispatch, dispatched, delivered, cancelled, delayed, exception |
+| Refund record   | requested, pending, succeeded, failed                                                                                      |
 
 Show customer-friendly labels. Paid orders retain their payment history even when cancelled/refunded. Only confirmed payments with allocated preorder capacity are eligible to enter production. Dispatch additionally requires production completion.
 
@@ -167,17 +167,17 @@ Guest order access uses a high-entropy token or equivalent secure mechanism; seq
 
 ## 10. Proposed technical architecture
 
-| Component | Choice |
-|---|---|
-| Storefront/admin | React + TypeScript; Vite build; intentional custom styling |
-| API/hosting | Cloudflare Workers; Hono for API routing |
-| Data | Cloudflare D1 with versioned SQL migrations |
-| Product images | Cloudflare R2, optimised derivatives, CDN delivery |
-| Payment processing | Paystack hosted checkout and server verification/webhooks |
-| Background work | Worker scheduled jobs for reconciliation, reservation expiry and email retries |
-| Authentication | Managed customer authentication plus separately enforced owner/admin access; choose provider before protected writes |
-| Code/version history | GitHub |
-| Transactional email | Provider selected during setup; sending-domain verification required |
+| Component            | Choice                                                                                                               |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Storefront/admin     | React + TypeScript; Vite build; intentional custom styling                                                           |
+| API/hosting          | Cloudflare Workers; Hono for API routing                                                                             |
+| Data                 | Cloudflare D1 with versioned SQL migrations                                                                          |
+| Product images       | Cloudflare R2, optimised derivatives, CDN delivery                                                                   |
+| Payment processing   | Paystack hosted checkout and server verification/webhooks                                                            |
+| Background work      | Worker scheduled jobs for reconciliation, reservation expiry and email retries                                       |
+| Authentication       | Managed customer authentication plus separately enforced owner/admin access; choose provider before protected writes |
+| Code/version history | GitHub                                                                                                               |
+| Transactional email  | Provider selected during setup; sending-domain verification required                                                 |
 
 Use separate development, staging and production databases, storage and credentials. Local/demo mode uses mock data and a payment adapter; it must never be able to call live Paystack accidentally. Preview mode shows a persistent sample-store notice. Test mode uses Paystack test credentials. Production mode rejects sample products and refuses checkout when required configuration is absent.
 
@@ -216,7 +216,7 @@ Migrations, real product/inventory APIs, managed admin and customer login, produ
 
 Delivery configuration, server-calculated totals, atomic capacity reservations, mixed-style dispatch estimates, Paystack test integration, webhooks/verification, reconciliation, secure order pages, order dashboard, email outbox. Prove the entire purchase flow before enabling real money.
 
-**Current progress:** the storefront now requests an authoritative preview quote from the backend, including item prices, delivery fee and final total. Guest details persist after validation errors, duplicate browser submissions are guarded, and preview confirmation stays explicitly pending without creating a payment. A test-only backend verification route rejects amount, currency or environment mismatches and never accepts live credentials. Expired capacity holds can now be released safely through an owner-protected recovery endpoint, and consuming a reservation is idempotent. Paystack initialization, signed webhooks, reconciliation, durable confirmation pages and the email outbox remain unfinished and blocked on test credentials plus approved delivery and mixed-shipment rules.
+**Current progress (8 October 2026):** the storefront catalog, variants, availability, prices, images and delivery quote now come from D1. Checkout validates the entire basket server-side and atomically creates the order, immutable item snapshots, whole-basket reservation/capacity movements and one idempotent payment attempt. Preview mode completes the full D1 journey with a clearly labelled simulated provider. Test mode supports Paystack test initialization, server callback verification, raw-body signed webhooks, duplicate-event protection and scheduled expiry reconciliation; live credentials and production checkout are rejected. Confirmed, pending, failed and payment-exception states are durable, and late success either reallocates the whole basket or creates an exception. The actual Paystack network/webhook journey remains unverified until an owner test credential and reachable staging URL are supplied. The email outbox records confirmation work, but sending/retry is unfinished. Customer identity, secure claiming and the finished owner dashboard also remain Phase 2/3 work.
 
 ### Phase 4: Production readiness
 

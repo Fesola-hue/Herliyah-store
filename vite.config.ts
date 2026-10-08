@@ -1,5 +1,5 @@
 import vinext from "vinext";
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import hostingConfig from "./.openai/hosting.json";
 import { readExecutionProfile } from "./scripts/execution-profile.mjs";
 import { sites } from "./build/sites-vite-plugin";
@@ -16,6 +16,7 @@ const managedLinux = readExecutionProfile() === "managed-linux";
 
 const localBindingConfig = {
   main: "./build/sites-worker.ts",
+  triggers: { crons: ["*/5 * * * *"] },
   compatibility_flags: ["nodejs_compat"],
   d1_databases: d1
     ? [
@@ -36,7 +37,18 @@ const localBindingConfig = {
     : [],
 };
 
-export default defineConfig(async ({ command }) => {
+export default defineConfig(async ({ command, mode }) => {
+  const localEnv = loadEnv(mode, process.cwd(), "");
+  const runtimeVars = Object.fromEntries(
+    [
+      "APP_MODE",
+      "PUBLIC_APP_ORIGIN",
+      "ADMIN_AUTH_MODE",
+      "CF_ACCESS_TEAM_DOMAIN",
+      "CF_ACCESS_AUD",
+      "ADMIN_EMAIL_ALLOWLIST",
+    ].flatMap((key) => (localEnv[key] ? [[key, localEnv[key]]] : [])),
+  );
   // Use Miniflare's local Request.cf placeholder unless fetching is requested.
   process.env.CLOUDFLARE_CF_FETCH_ENABLED ??= "false";
   process.env.WRANGLER_SEND_METRICS ??= "false";
@@ -69,6 +81,7 @@ export default defineConfig(async ({ command }) => {
         inspectorPort: false,
         config: {
           ...localBindingConfig,
+          vars: runtimeVars,
           ...(command === "serve"
             ? {
                 services: [

@@ -1,45 +1,32 @@
 # Validation record
 
-## Automated
+This record distinguishes current checks from older visual-preview work.
 
-- Reservation model: whole-basket atomicity, last-unit contention and idempotency replay.
-- Static preview checks: navigation targets, required sample notice, ten sample product records and local asset references.
-- D1 migration and sample seed executed in an in-memory SQLite database: 10 products and 50 variants loaded.
-- Local HTTP smoke checks returned 200 for home, shop, product, cart, checkout and admin routes.
-- Headless Edge checked home, shop, product, cart, checkout, account, wishlist and tracking at 360px, 390px, 768px, 1024px and 1440px (40 route/viewport combinations). All passed the horizontal-overflow, header-centering, header-mode, wordmark-wrap and clipped-content checks.
-- Full-page screenshots were captured for all eight shopper routes at 360px and 390px. Initial-screen screenshots were captured for home, shop and product at both phone widths.
-- The generated screenshots were visually inspected for editorial-image text contrast, model visibility, content-edge consistency, responsive type scale, product-card readability, hero crop and vertical rhythm.
-- Product variant selection, add-to-bag, cart rendering, cart persistence after reload and shop search passed at 390px and 1440px. The mobile filter panel also passed category Apply, active-filter display, individual removal and Clear behaviour at 390px.
-- No runtime exceptions or browser-console error entries were recorded during the 40-screen sweep.
-- Phase 3 reservation recovery tests cover one-time expiry release and ensure consumed reservations cannot be released or committed twice.
-- The production build completed after the Phase 2 foundation added D1/R2 bindings, owner-authenticated admin routing, catalog/admin APIs, audited product and capacity updates, and product-image storage.
+## Current backend and checkout checks (8 October 2026)
 
-## Focused mobile product-page pass
+- `npm test`: passed all 13 tests. Eight tests run against an actual Miniflare D1 service with the real migrations and seed. They cover atomic creation, multi-line rollback, competing last-unit reservations, idempotent checkout replay, duplicate payment events, one-time expiry release, late-success reallocation, late-success exception, and retaining capacity during provider verification uncertainty. Five earlier reservation-model tests also pass.
+- `npm run lint`: exited 0 with no errors. It reports 13 non-blocking warnings: nine existing native product-image elements (an image-optimisation follow-up) and four terse expressions in browser QA scripts. No lint rule was disabled.
+- `npm run build`: completed all five Vinext/Vite environments successfully after the Worker schedule, Hono routes and admin JWT verifier were included.
+- A clean temporary D1 applied all three migrations through Wrangler's journal. The journal's no-op repeat behaviour was also verified before the final refund migration was added.
+- Local D1 migrations and sample seed were applied with Wrangler. `/api/catalog` returned all 10 sample products, D1 variants and assigned sample images.
+- Direct HTTP journey passed: product/variant selection data was read from D1, the server recalculated a ₦97,000 total, created an order/reservation/payment attempt, preview confirmation consumed the hold, and the status API returned confirmed/succeeded/consumed.
+- `npm run test:e2e` passed against the live Vinext development server in headless Edge. It selected a D1-backed product variant, added it to the cart, entered checkout details, created the order, completed preview payment, observed “Your preorder is confirmed”, verified an empty cart/no horizontal overflow/no browser errors, and confirmed D1/API order `confirmed`, payment `succeeded`, reservation `consumed`.
 
-- Rechecked the Amara Drape Dress, Tomi Skirt Set (short name) and Eniola Wide Trouser (long name) at both 360px and 390px: six product/viewport combinations passed with no horizontal overflow or clipped purchase controls.
-- At every viewport, automation tapped every colour, every available size, the size-guide toggle, quantity, wishlist and Add to Bag. The selected variants, quantity change, wishlist state, cart count and confirmation message were verified.
-- Fresh full-page screenshots are stored in `.visual-qa/product-mobile/`, including `full-360-amara.png` and `full-390-amara.png`. The Amara, shortest-name and longest-name captures were visually inspected after the interaction run.
-- The focused browser run recorded no console errors. Unit tests (3/3) and the production build also passed after the layout changes.
+The browser E2E used the preview payment adapter, not Paystack. It validates the application and D1 journey after the provider-verification boundary; it does not prove Paystack network, dashboard or webhook delivery.
 
-## Homepage, gallery, browsing and checkout pass
+## Earlier responsive checks
 
-- Headless Edge rendered and captured the storefront at 1366×768, 1440×900, 360×780 and 390×844. The homepage headline and collection action were fully inside the initial viewport at all four sizes, with no horizontal overflow.
-- The shop retains all ten clearly labelled sample designs, while the homepage deliberately features the first four. Each sample product exposes one assigned design/colour photograph; replacement merchandise photography is still required before launch.
-- The interaction sweep selected gallery thumbnails where present, colour and size, added to bag, increased and decreased cart quantity, navigated through a related design, and returned to the original filtered/search result. Search and filter query state survived both product transitions.
-- Checkout validation, saved customer fields after reload, backend-calculated subtotal/delivery/total, guarded duplicate submission and the pending preview confirmation all passed at every viewport. No live payment or inventory reservation was created.
-- Four complete end-to-end viewport runs passed with zero browser-console errors. Fresh initial and full-page captures are stored in `.visual-qa/storefront-flow/`.
+- Headless Edge previously checked home, shop, product, cart, checkout, account, wishlist and tracking at 360, 390, 768, 1024 and 1440 pixel widths for overflow and clipping.
+- Focused product interaction previously exercised colours, available sizes, size guide, quantity, wishlist and add-to-cart at 360/390 pixels.
+- Storefront screenshots were visually reviewed for hero crop, model visibility, editorial contrast, content edges, typography and product cards.
 
-## Environment limitations
+These older checks predate the D1 catalog/checkout changes. The focused checkout E2E was rerun after those changes, but the full multi-route screenshot matrix was not rerun.
 
-- Browser verification used the live Vinext development server against the same React source. Hosted D1/R2 migration and owner-write checks remain dependent on publication and runtime configuration.
-- Private Sites publication depends on the external source endpoint; any publish failure is reported separately in the handoff.
+## Blocked or unverified
 
-## Manual browser checks required before launch
-
-- Physical-device Safari/Chrome checks before launch; automated Chromium coverage is recorded above.
-- Keyboard and assistive-technology checks beyond the automated focus and layout review.
-- Paystack test initialize/verify/webhook flows with duplicate and out-of-order events.
-- Managed-auth ownership isolation and secure guest-order claim links.
-- D1 concurrency, reservation expiry, late success, outbox retry and nonproduction recovery.
-
-No live payment, customer authentication, email, delivery rule or upload flow is represented as complete in the preview.
+- Real Paystack test initialization, callback verification, signed webhook delivery and scheduled reconciliation require an owner `sk_test_` credential and reachable staging URL. The code rejects live keys.
+- Cloudflare Access denial/allowance with a real issuer and owner account requires the Access application/audience and owner email.
+- Hosted D1/R2 migrations, R2 uploads, scheduled triggers and production resource binding have not been exercised on a deployed Worker.
+- Email outbox insertion is covered by the payment transaction, but no email provider or retry sender exists.
+- Customer identity isolation, cross-device wishlist/order history and guest-order claiming are not implemented.
+- Physical iPhone Safari, assistive technology, load/rate-limit, monitoring and backup/restore drills remain required before launch.
