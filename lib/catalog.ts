@@ -18,7 +18,15 @@ export type Product = {
   published: boolean;
   sample?: boolean;
   accent: string;
-  preparation: { min: number; max: number; basis: string };
+  careInstructions?: string;
+  measurements?: Record<string, unknown>;
+  sizeGuideKey?: string;
+  preparation: {
+    min: number;
+    max: number;
+    basis: string;
+    dispatchDate?: string | null;
+  };
   variants: Variant[];
 };
 const sizes: Variant["size"][] = ["XS", "S", "M", "L", "XL"];

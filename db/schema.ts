@@ -29,6 +29,13 @@ export const products = sqliteTable(
     preparationTrigger: text("preparation_trigger")
       .notNull()
       .default("verified_payment"),
+    careInstructions: text("care_instructions").notNull().default(""),
+    measurementsJson: text("measurements_json").notNull().default("{}"),
+    sizeGuideKey: text("size_guide_key").notNull().default("brand-default"),
+    specificDispatchDate: text("specific_dispatch_date"),
+    featuredOrder: integer("featured_order"),
+    publishedAt: text("published_at"),
+    archivedAt: text("archived_at"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },
@@ -51,6 +58,7 @@ export const productImages = sqliteTable("product_images", {
   altText: text("alt_text").notNull(),
   sortOrder: integer("sort_order").notNull().default(0),
   isCover: integer("is_cover", { mode: "boolean" }).notNull().default(false),
+  colour: text("colour"),
   createdAt: text("created_at").notNull(),
 });
 
@@ -137,6 +145,13 @@ export const orders = sqliteTable(
     deliveryRuleSnapshotJson: text("delivery_rule_snapshot_json").notNull(),
     dispatchMinDate: text("dispatch_min_date"),
     dispatchMaxDate: text("dispatch_max_date"),
+    revisedDispatchMinDate: text("revised_dispatch_min_date"),
+    revisedDispatchMaxDate: text("revised_dispatch_max_date"),
+    delayMessage: text("delay_message"),
+    courierName: text("courier_name"),
+    trackingReference: text("tracking_reference"),
+    trackingUrl: text("tracking_url"),
+    internalNotes: text("internal_notes"),
     guestAccessTokenHash: text("guest_access_token_hash").notNull().unique(),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
@@ -312,6 +327,7 @@ export const deliveryZones = sqliteTable("delivery_zones", {
   transitMinDays: integer("transit_min_days").notNull(),
   transitMaxDays: integer("transit_max_days").notNull(),
   active: integer("active", { mode: "boolean" }).notNull().default(false),
+  transitDayBasis: text("transit_day_basis").notNull().default("business"),
 });
 export const notificationOutbox = sqliteTable(
   "notification_outbox",
@@ -324,6 +340,9 @@ export const notificationOutbox = sqliteTable(
     attempts: integer("attempts").notNull().default(0),
     nextAttemptAt: text("next_attempt_at"),
     createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at"),
+    sentAt: text("sent_at"),
+    lastError: text("last_error"),
   },
   (table) => [
     index("idx_outbox_status_next").on(table.status, table.nextAttemptAt),

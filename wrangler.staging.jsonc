@@ -1,0 +1,57 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "herliyah-store-staging",
+  "main": "dist/server/index.js",
+  "compatibility_date": "2026-05-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "preview_urls": false,
+  "no_bundle": true,
+  "rules": [
+    {
+      "type": "ESModule",
+      "globs": ["**/*.js", "**/*.mjs"]
+    }
+  ],
+  "assets": {
+    "directory": "dist/client"
+  },
+  "vars": {
+    "APP_MODE": "preview",
+    "PUBLIC_APP_ORIGIN": "https://herliyah-store-staging.aishaonola.workers.dev",
+    "PAYMENT_PROVIDER": "paystack",
+    "PAYMENT_PROVIDER_VERIFIED": "false",
+    "ADMIN_AUTH_MODE": "cloudflare-access",
+    "CF_ACCESS_TEAM_DOMAIN": "https://theoffscript.cloudflareaccess.com",
+    "CF_ACCESS_AUD": "f8b8ae2ba25b04c0c11ecbfe71362135f18d6bc891cd483b8921a782efafa7b6",
+    "ADMIN_EMAIL_ALLOWLIST": "aliyahonola8@gmail.com,onolaaishat123@gmail.com",
+    "EMAIL_PROVIDER": "disabled"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "herliyah-store-staging",
+      "database_id": "497a1d79-0bd5-45c4-a855-cc0a3cc7ff64",
+      "migrations_dir": "drizzle"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "PRODUCT_IMAGES",
+      "bucket_name": "herliyah-store-images-staging"
+    }
+  ],
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  },
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 0.01
+    }
+  }
+}

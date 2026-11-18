@@ -36,12 +36,13 @@ export class MockPaymentAdapter implements PaymentAdapter {
     };
   }
 }
-export class PaystackTestAdapter implements PaymentAdapter {
-  constructor(private secretKey: string) {
-    if (!secretKey.startsWith("sk_test_"))
-      throw new Error(
-        "Only Paystack test keys are accepted outside production launch setup",
-      );
+export class PaystackAdapter implements PaymentAdapter {
+  private secretKey: string;
+  constructor(secretKey: string, environment: "test" | "live") {
+    const prefix = environment === "live" ? "sk_live_" : "sk_test_";
+    if (!secretKey.startsWith(prefix))
+      throw new Error(`Paystack ${environment} key required`);
+    this.secretKey = secretKey;
   }
   async initialize(input: PaymentInit) {
     const res = await fetch("https://api.paystack.co/transaction/initialize", {
@@ -101,5 +102,11 @@ export class PaystackTestAdapter implements PaymentAdapter {
       currency: body.data.currency as "NGN",
       environment: body.data.domain === "live" ? "live" : "test",
     };
+  }
+}
+
+export class PaystackTestAdapter extends PaystackAdapter {
+  constructor(secretKey: string) {
+    super(secretKey, "test");
   }
 }

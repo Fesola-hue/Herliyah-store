@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable @next/next/no-html-link-for-pages -- Native navigation avoids the deployed Vinext Link runtime failure. */
 import {
   createContext,
   useCallback,
@@ -8,7 +9,6 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Heart,
@@ -26,7 +26,13 @@ import { formatNaira, type CartItem, type Product } from "@/lib/catalog";
 const CART_KEY = "herliyah-preview-cart-v1",
   WISH_KEY = "herliyah-preview-wishlist-v1",
   CHECKOUT_KEY = "herliyah-preview-checkout-v1",
-  CHECKOUT_SESSION_KEY = "herliyah-checkout-session-v1";
+  CHECKOUT_SESSION_KEY = "herliyah-checkout-session-v1",
+  CUSTOMER_CONNECTED_KEY = "herliyah-customer-connected-v1";
+const EMPTY_CART: CartItem[] = [];
+const EMPTY_WISHLIST: string[] = [];
+const EMPTY_CHECKOUT_SESSION: { idempotencyKey: string } = {
+  idempotencyKey: "",
+};
 function useStored<T>(key: string, initial: T) {
   const fallback = useMemo(() => JSON.stringify(initial), [initial]);
   const subscribe = useCallback(
@@ -79,14 +85,80 @@ function useStored<T>(key: string, initial: T) {
 }
 const CatalogContext = createContext<Product[]>([]);
 const useCatalog = () => useContext(CatalogContext);
+function useScrollReveal() {
+  useEffect(() => {
+    const elements =
+      document.querySelectorAll<HTMLElement>(".reveal-on-scroll");
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      elements.forEach((element) => element.classList.add("is-visible"));
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("is-visible");
+            observer.unobserve(entry.target);
+          }
+        });
+      },
+      { threshold: 0.12, rootMargin: "0px 0px -8%" },
+    );
+    elements.forEach((element) => observer.observe(element));
+    return () => observer.disconnect();
+  }, []);
+}
+function useParallaxImages() {
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const images = document.querySelectorAll<HTMLElement>(".parallax-image");
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const viewportCenter = window.innerHeight / 2;
+      images.forEach((image) => {
+        const bounds = image.parentElement?.getBoundingClientRect();
+        if (
+          !bounds ||
+          bounds.bottom < -80 ||
+          bounds.top > window.innerHeight + 80
+        )
+          return;
+        const distance =
+          (viewportCenter - (bounds.top + bounds.height / 2)) * 0.045;
+        const offset = Math.max(-24, Math.min(24, distance));
+        image.style.setProperty("--parallax-offset", `${offset.toFixed(1)}px`);
+      });
+    };
+    const onScroll = () => {
+      if (!frame) frame = window.requestAnimationFrame(update);
+    };
+    update();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+      if (frame) window.cancelAnimationFrame(frame);
+    };
+  }, []);
+}
 const Brand = () => (
-  <Link className="wordmark" href="/" aria-label="HERLIYAH home">
+  <a className="wordmark" href="/" aria-label="HERLIYAH home">
     HERLIYAH
-  </Link>
+  </a>
 );
 
 function Header({ count }: { count: number }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(false),
+    [menuClosing, setMenuClosing] = useState(false);
+  const closeMenu = () => {
+    setMenuClosing(true);
+    window.setTimeout(() => {
+      setOpen(false);
+      setMenuClosing(false);
+    }, 220);
+  };
   return (
     <>
       <div className="preview-notice">
@@ -95,45 +167,52 @@ function Header({ count }: { count: number }) {
       <header className="site-header">
         <button
           className="icon-button mobile-only"
-          onClick={() => setOpen(true)}
+          onClick={() => {
+            setMenuClosing(false);
+            setOpen(true);
+          }}
           aria-label="Open menu"
         >
           <Menu />
         </button>
         <nav className="desktop-nav">
-          <Link href="/shop">Shop</Link>
-          <Link href="/track">Track order</Link>
+          <a href="/shop">Shop</a>
+          <a href="/track">Track order</a>
         </nav>
         <Brand />
         <nav className="header-actions">
-          <Link className="desktop-only" href="/wishlist" aria-label="Wishlist">
+          <a className="desktop-only" href="/wishlist" aria-label="Wishlist">
             <Heart />
-          </Link>
-          <Link className="desktop-only" href="/account" aria-label="Account">
+          </a>
+          <a className="desktop-only" href="/account" aria-label="Account">
             <UserRound />
-          </Link>
-          <Link href="/cart" aria-label={`Bag with ${count} items`}>
+          </a>
+          <a href="/cart" aria-label={`Bag with ${count} items`}>
             <ShoppingBag />
             <span>{count}</span>
-          </Link>
+          </a>
         </nav>
       </header>
       {open && (
-        <div className="mobile-menu" role="dialog" aria-modal="true">
+        <div
+          className={`mobile-menu ${menuClosing ? "is-closing" : ""}`}
+          role="dialog"
+          aria-modal="true"
+        >
           <button
             className="icon-button close-menu"
-            onClick={() => setOpen(false)}
+            onClick={closeMenu}
             aria-label="Close menu"
           >
             <X />
           </button>
           <Brand />
-          <nav onClick={() => setOpen(false)}>
-            <Link href="/shop">Shop the collection</Link>
-            <Link href="/wishlist">Wishlist</Link>
-            <Link href="/track">Track an order</Link>
-            <Link href="/account">Account preview</Link>
-            <Link href="/admin">Owner dashboard</Link>
+          <nav onClick={closeMenu}>
+            <a href="/shop">Shop the collection</a>
+            <a href="/wishlist">Wishlist</a>
+            <a href="/track">Track an order</a>
+            <a href="/account">Account preview</a>
+            <a href="/admin">Owner dashboard</a>
           </nav>
         </div>
       )}
@@ -149,9 +228,9 @@ function Footer() {
       </div>
       <div>
         <h3>Visit</h3>
-        <Link href="/shop">Shop</Link>
-        <Link href="/track">Order tracking</Link>
-        <Link href="/admin">Owner access</Link>
+        <a href="/shop">Shop</a>
+        <a href="/track">Order tracking</a>
+        <a href="/admin">Owner access</a>
       </div>
       <div>
         <h3>Policies</h3>
@@ -178,20 +257,28 @@ function ProductCard({
   returnTo?: string;
 }) {
   const saved = wish.includes(p.id),
-    href = `/product/${p.slug}${returnTo ? `?from=${encodeURIComponent(returnTo)}` : ""}`;
+    [feedback, setFeedback] = useState("");
+  const showFeedback = (next: string) => {
+    setFeedback(next);
+    window.setTimeout(() => setFeedback(""), 1400);
+  };
+  const href = `/product/${p.slug}${returnTo ? `?from=${encodeURIComponent(returnTo)}` : ""}`;
   return (
     <article className="product-card">
       <div className="product-image-wrap">
-        <Link href={href}>
+        <a href={href}>
           <img
             src={p.image}
             alt={p.images[0]?.alt ?? `Sample photograph for ${p.name}`}
             loading="lazy"
           />
-        </Link>
+        </a>
         <button
           className={`heart ${saved ? "saved" : ""}`}
-          onClick={() => toggle(p.id)}
+          onClick={() => {
+            toggle(p.id);
+            showFeedback(saved ? "Removed" : "Saved");
+          }}
           aria-label={
             saved
               ? `Remove ${p.name} from wishlist`
@@ -200,18 +287,23 @@ function ProductCard({
         >
           <Heart fill={saved ? "currentColor" : "none"} />
         </button>
-        <span className="sample-pill">Sample</span>
+        {feedback && (
+          <span className="heart-feedback" role="status">
+            {feedback}
+          </span>
+        )}
+        {p.sample && <span className="sample-pill">Sample</span>}
       </div>
       <div className="product-card-copy">
         <div>
           <h3>
-            <Link href={href}>{p.name}</Link>
+            <a href={href}>{p.name}</a>
           </h3>
           <p>{p.accent}</p>
         </div>
         <div className="price">
           {formatNaira(p.priceKobo)}
-          <small>sample price</small>
+          {p.sample && <small>sample price</small>}
         </div>
       </div>
       <p className="lead-time">
@@ -254,12 +346,15 @@ function Home({
   wish: string[];
   toggle: (id: string) => void;
 }) {
+  useScrollReveal();
+  useParallaxImages();
   const featuredProducts = useCatalog().slice(0, 4);
   return (
     <main>
       <section className="hero">
         <div className="hero-image">
           <img
+            className="parallax-image"
             src="/hero-cream.png"
             alt="Sample editorial photograph of a woman in a cream draped dress"
             fetchPriority="high"
@@ -268,12 +363,12 @@ function Home({
         <div className="hero-copy">
           <p className="eyebrow">The first study</p>
           <h1>Clothes with presence</h1>
-          <Link className="button" href="/shop">
-            Explore the collection
-          </Link>
+          <a className="button" href="/shop">
+            Shop collection
+          </a>
         </div>
       </section>
-      <section className="principles">
+      <section className="principles reveal-on-scroll">
         <span>Made after you order</span>
         <p>
           A study in proportion, restraint and ease. Every piece is prepared to
@@ -281,16 +376,17 @@ function Home({
           delivery begins only after dispatch.
         </p>
       </section>
-      <section className="collection-section">
+      <section className="collection-section reveal-on-scroll">
         <div className="section-heading">
           <p className="eyebrow">Sample collection</p>
           <h2>Quietly commanding.</h2>
-          <Link href="/shop">Shop all</Link>
+          <a href="/shop">Shop all</a>
         </div>
         <ProductGrid items={featuredProducts} wish={wish} toggle={toggle} />
       </section>
-      <section className="story">
+      <section className="story reveal-on-scroll">
         <img
+          className="parallax-image"
           src="/look-olive.png"
           alt="Sample editorial photograph of a woman in an olive tailored set"
           loading="lazy"
@@ -301,9 +397,9 @@ function Home({
           <p>
             Intentional lines, considered proportions and an unhurried ease.
           </p>
-          <Link className="text-link" href="/shop">
-            Explore the collection
-          </Link>
+          <a className="text-link" href="/shop">
+            Shop collection
+          </a>
         </div>
       </section>
     </main>
@@ -317,6 +413,7 @@ function Shop({
   wish: string[];
   toggle: (id: string) => void;
 }) {
+  useScrollReveal();
   const publishedProducts = useCatalog();
   const [initialFilters] = useState(() => {
     const params =
@@ -335,9 +432,17 @@ function Shop({
     [sort, setSort] = useState(initialFilters.sort),
     [query, setQuery] = useState(initialFilters.query);
   const [filtersOpen, setFiltersOpen] = useState(false),
+    [filtersClosing, setFiltersClosing] = useState(false),
     [draftCategory, setDraftCategory] = useState(initialFilters.category),
     [draftSize, setDraftSize] = useState(initialFilters.size),
     [draftSort, setDraftSort] = useState(initialFilters.sort);
+  const closeFilters = () => {
+    setFiltersClosing(true);
+    window.setTimeout(() => {
+      setFiltersOpen(false);
+      setFiltersClosing(false);
+    }, 220);
+  };
   useEffect(() => {
     const params = new URLSearchParams();
     if (query) params.set("q", query);
@@ -474,7 +579,6 @@ function Shop({
         <button
           className="filter-trigger"
           onClick={() => {
-            setDraftCategory(category);
             setDraftSize(size);
             setDraftSort(sort);
             setFiltersOpen(true);
@@ -486,9 +590,9 @@ function Shop({
       </div>
       {filtersOpen && (
         <div
-          className="filter-overlay"
+          className={`filter-overlay ${filtersClosing ? "is-closing" : ""}`}
           onMouseDown={(e) => {
-            if (e.target === e.currentTarget) setFiltersOpen(false);
+            if (e.target === e.currentTarget) closeFilters();
           }}
         >
           <section
@@ -499,7 +603,7 @@ function Shop({
           >
             <button
               className="icon-button filter-close"
-              onClick={() => setFiltersOpen(false)}
+              onClick={closeFilters}
               aria-label="Close filters"
             >
               <X />
@@ -507,60 +611,60 @@ function Shop({
             <div className="filter-sheet-header">
               <h2 id="filter-title">Filter & sort</h2>
               <p>Refine the sample collection.</p>
-            </div>
-            <div className="filter-sheet-fields">
-              <label>
-                Category
-                <select
-                  value={draftCategory}
-                  onChange={(e) => setDraftCategory(e.target.value)}
+              <div className="filter-sheet-fields">
+                <label>
+                  Category
+                  <select
+                    value={draftCategory}
+                    onChange={(e) => setDraftCategory(e.target.value)}
+                  >
+                    <option>All</option>
+                    <option>Dresses</option>
+                    <option>Sets</option>
+                    <option>Separates</option>
+                    <option>Occasion</option>
+                  </select>
+                </label>
+                <label>
+                  Size
+                  <select
+                    value={draftSize}
+                    onChange={(e) => setDraftSize(e.target.value)}
+                  >
+                    <option>All</option>
+                    {["XS", "S", "M", "L", "XL"].map((s) => (
+                      <option key={s}>{s}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Sort
+                  <select
+                    value={draftSort}
+                    onChange={(e) => setDraftSort(e.target.value)}
+                  >
+                    <option value="featured">Featured</option>
+                    <option value="low">Price: low to high</option>
+                    <option value="high">Price: high to low</option>
+                  </select>
+                </label>
+              </div>
+              <div className="filter-sheet-footer">
+                <button
+                  className="button dark"
+                  onClick={() => {
+                    setCategory(draftCategory);
+                    setSize(draftSize);
+                    setSort(draftSort);
+                    closeFilters();
+                  }}
                 >
-                  <option>All</option>
-                  <option>Dresses</option>
-                  <option>Sets</option>
-                  <option>Separates</option>
-                  <option>Occasion</option>
-                </select>
-              </label>
-              <label>
-                Size
-                <select
-                  value={draftSize}
-                  onChange={(e) => setDraftSize(e.target.value)}
-                >
-                  <option>All</option>
-                  {["XS", "S", "M", "L", "XL"].map((s) => (
-                    <option key={s}>{s}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Sort
-                <select
-                  value={draftSort}
-                  onChange={(e) => setDraftSort(e.target.value)}
-                >
-                  <option value="featured">Featured</option>
-                  <option value="low">Price: low to high</option>
-                  <option value="high">Price: high to low</option>
-                </select>
-              </label>
-            </div>
-            <div className="filter-sheet-footer">
-              <button
-                className="button dark"
-                onClick={() => {
-                  setCategory(draftCategory);
-                  setSize(draftSize);
-                  setSort(draftSort);
-                  setFiltersOpen(false);
-                }}
-              >
-                Apply
-              </button>
-              <button className="button clear-button" onClick={clear}>
-                Clear all
-              </button>
+                  Apply
+                </button>
+                <button className="button clear-button" onClick={clear}>
+                  Clear all
+                </button>
+              </div>
             </div>
           </section>
         </div>
@@ -579,12 +683,14 @@ function Shop({
         </div>
       )}
       {shown.length ? (
-        <ProductGrid
-          items={shown}
-          wish={wish}
-          toggle={toggle}
-          returnTo={returnTo}
-        />
+        <div className="reveal-on-scroll">
+          <ProductGrid
+            items={shown}
+            wish={wish}
+            toggle={toggle}
+            returnTo={returnTo}
+          />
+        </div>
       ) : (
         <div className="empty-state">
           <h2>No designs match</h2>
@@ -615,12 +721,15 @@ function Detail({
   wish: string[];
   toggle: (id: string) => void;
 }) {
+  useScrollReveal();
   const publishedProducts = useCatalog();
   const colours = [...new Set(p.variants.map((v) => v.colour))];
   const [colour, setColour] = useState(colours[0]),
     [variant, setVariant] = useState(""),
     [qty, setQty] = useState(1),
     [message, setMessage] = useState(""),
+    [adding, setAdding] = useState(false),
+    [wishMessage, setWishMessage] = useState(""),
     [sizeGuideOpen, setSizeGuideOpen] = useState(false),
     [activeImage, setActiveImage] = useState(0),
     [collectionHref] = useState(() => {
@@ -643,7 +752,10 @@ function Detail({
     .slice(0, 4);
   return (
     <main className="product-page">
-      <section className="gallery" aria-label={`${p.name} image gallery`}>
+      <section
+        className="gallery reveal-on-scroll"
+        aria-label={`${p.name} image gallery`}
+      >
         <div className="desktop-gallery">
           <div className="gallery-thumbnails">
             {galleryImages.map((image, index) => (
@@ -652,6 +764,7 @@ function Detail({
                 key={`${image.src}-${index}`}
                 className={activeImage === index ? "selected" : ""}
                 onClick={() => setActiveImage(index)}
+                aria-current={activeImage === index ? "true" : undefined}
                 aria-label={`Show image ${index + 1} of ${galleryImages.length}`}
               >
                 <img src={image.src} alt="" />
@@ -682,22 +795,26 @@ function Detail({
           {activeImage + 1} / {galleryImages.length}
         </span>
       </section>
-      <div className="product-info">
-        <Link className="collection-back" href={collectionHref}>
+      <div className="product-info reveal-on-scroll">
+        <a className="collection-back" href={collectionHref}>
           Back to collection
-        </Link>
+        </a>
         <div className="product-heading">
-          <p className="eyebrow">{p.category} · Sample design</p>
+          <p className="eyebrow">
+            {p.category}
+            {p.sample ? " · Sample design" : ""}
+          </p>
           <h1>{p.name}</h1>
           <p className="detail-price">
-            {formatNaira(p.priceKobo)} <span>sample price</span>
+            {formatNaira(p.priceKobo)} {p.sample && <span>sample price</span>}
           </p>
           <p className="description">{p.description}</p>
         </div>
         <p className="timing-line">
           <strong>
-            Ready to dispatch in {p.preparation.min}–{p.preparation.max}{" "}
-            business days.
+            {p.preparation.dispatchDate
+              ? `Scheduled to dispatch on ${p.preparation.dispatchDate}.`
+              : `Ready to dispatch in ${p.preparation.min}–${p.preparation.max} ${p.preparation.basis}.`}
           </strong>{" "}
           <a href="#delivery">Delivery details</a>
         </p>
@@ -716,6 +833,7 @@ function Detail({
                   setActiveImage(0);
                 }}
                 className={colour === c ? "selected" : ""}
+                aria-pressed={colour === c}
               >
                 {c}
               </button>
@@ -742,6 +860,7 @@ function Detail({
                 disabled={!v.open || v.capacity === 0}
                 onClick={() => setVariant(v.id)}
                 className={variant === v.id ? "selected" : ""}
+                aria-pressed={variant === v.id}
               >
                 {v.size}
                 <small>{!v.open || v.capacity === 0 ? "Closed" : ""}</small>
@@ -749,10 +868,23 @@ function Detail({
             ))}
           </div>
           {sizeGuideOpen && (
-            <p className="size-guide-note">
-              Sample size labels only. Final HERLIYAH measurements and fit notes
-              will be added before launch.
-            </p>
+            <div className="size-guide-note">
+              <p>HERLIYAH sizes use the approved brand guide for XS–XL.</p>
+              {p.measurements && Object.keys(p.measurements).length > 0 && (
+                <dl>
+                  {Object.entries(p.measurements).map(([label, value]) => (
+                    <div key={label}>
+                      <dt>{label}</dt>
+                      <dd>
+                        {typeof value === "string"
+                          ? value
+                          : JSON.stringify(value)}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+            </div>
           )}
         </fieldset>
         <div className="purchase-controls">
@@ -773,22 +905,38 @@ function Detail({
           <div className="purchase-actions">
             <button
               className="button dark"
+              disabled={adding}
+              aria-busy={adding}
               onClick={() => {
+                if (adding) return;
                 if (!selected) {
                   setMessage(
                     "Choose an available size before adding to your bag.",
                   );
                   return;
                 }
-                add(p, selected.id, qty);
-                setMessage(`${p.name} was added to your bag.`);
+                setAdding(true);
+                setMessage("");
+                window.setTimeout(() => {
+                  add(p, selected.id, qty);
+                  setAdding(false);
+                  setMessage(`${p.name} was added to your bag.`);
+                }, 220);
               }}
             >
-              Add to bag
+              {adding ? "Adding…" : message ? "Added to bag" : "Add to bag"}
             </button>
             <button
               className="icon-button bordered"
-              onClick={() => toggle(p.id)}
+              onClick={() => {
+                const saved = wish.includes(p.id);
+                toggle(p.id);
+                setWishMessage(
+                  saved ? "Removed from wishlist" : "Saved to wishlist",
+                );
+                window.setTimeout(() => setWishMessage(""), 1400);
+              }}
+              aria-pressed={wish.includes(p.id)}
               aria-label={
                 wish.includes(p.id)
                   ? "Remove from wishlist"
@@ -799,6 +947,11 @@ function Detail({
             </button>
           </div>
         </div>
+        {wishMessage && (
+          <p className="wishlist-message" role="status">
+            {wishMessage}
+          </p>
+        )}
         {message && (
           <p className="inline-message" role="status">
             {message}
@@ -808,8 +961,7 @@ function Detail({
           <details>
             <summary>Care</summary>
             <p>
-              Care instructions require owner review and will be set per style
-              before publishing.
+              {p.careInstructions || "Care instructions are being finalised."}
             </p>
           </details>
           <details id="delivery">
@@ -823,13 +975,13 @@ function Detail({
           </details>
         </div>
       </div>
-      <section className="related-products">
+      <section className="related-products reveal-on-scroll">
         <div className="related-heading">
           <div>
             <p className="eyebrow">Continue browsing</p>
             <h2>You may also like</h2>
           </div>
-          <Link href={collectionHref}>Back to the collection</Link>
+          <a href={collectionHref}>Back to the collection</a>
         </div>
         <ProductGrid
           items={related}
@@ -867,9 +1019,9 @@ function Cart({
           <ShoppingBag />
           <h2>Your bag is empty</h2>
           <p>Explore ten sample preorder designs.</p>
-          <Link className="button dark" href="/shop">
+          <a className="button dark" href="/shop">
             Shop the collection
-          </Link>
+          </a>
         </div>
       ) : (
         <div className="cart-layout">
@@ -950,9 +1102,9 @@ function Cart({
               style is ready, currently up to {max} business days after verified
               payment.
             </p>
-            <Link className="button olive" href="/checkout">
-              Continue to checkout preview
-            </Link>
+            <a className="button olive" href="/checkout">
+              Continue to checkout
+            </a>
             <small>
               No capacity is reserved until payment is initiated on the server.
             </small>
@@ -992,6 +1144,15 @@ type Quote = {
   totalKobo: number;
   courierEstimate: string;
   paymentsEnabled: boolean;
+  shippingPolicy?: { mode: string };
+};
+type DeliveryZone = {
+  id: string;
+  name: string;
+  feeKobo: number;
+  transitMinDays: number;
+  transitMaxDays: number;
+  transitDayBasis: string;
 };
 const emptyCheckout: CheckoutDetails = {
   fullName: "",
@@ -1014,8 +1175,10 @@ function Checkout({ cart }: { cart: CartItem[] }) {
       reference?: string;
       orderId?: string;
       accessToken?: string;
-    }>(CHECKOUT_SESSION_KEY, { idempotencyKey: "" }),
+    }>(CHECKOUT_SESSION_KEY, EMPTY_CHECKOUT_SESSION),
     [errors, setErrors] = useState<Record<string, string>>({}),
+    [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>([]),
+    [deliveryZoneId, setDeliveryZoneId] = useState(""),
     [quote, setQuote] = useState<Quote | null>(null),
     [quoteError, setQuoteError] = useState(""),
     [submitting, setSubmitting] = useState(false),
@@ -1027,11 +1190,26 @@ function Checkout({ cart }: { cart: CartItem[] }) {
       orderStatus: string;
     } | null>(null);
   useEffect(() => {
-    if (!cart.length) return;
+    fetch("/api/delivery-options")
+      .then(async (response) => {
+        if (!response.ok) throw new Error("delivery_options_failed");
+        return response.json() as Promise<{ zones: DeliveryZone[] }>;
+      })
+      .then(({ zones }) => {
+        setDeliveryZones(zones);
+        setDeliveryZoneId((current) => current || zones[0]?.id || "");
+      })
+      .catch(() =>
+        setQuoteError("Delivery options are temporarily unavailable."),
+      );
+  }, []);
+  useEffect(() => {
+    if (!cart.length || !deliveryZoneId) return;
     fetch("/api/checkout/quote", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
+        deliveryZoneId,
         lines: cart.map((item) => ({
           variantId: item.variantId,
           quantity: item.quantity,
@@ -1049,7 +1227,7 @@ function Checkout({ cart }: { cart: CartItem[] }) {
           "We could not refresh this order total. Please try again.",
         ),
       );
-  }, [cart]);
+  }, [cart, deliveryZoneId]);
   const field = (
     name: keyof CheckoutDetails,
     label: string,
@@ -1104,7 +1282,7 @@ function Checkout({ cart }: { cart: CartItem[] }) {
         body: JSON.stringify({
           idempotencyKey,
           customer: details,
-          deliveryZoneId: "lagos",
+          deliveryZoneId,
           lines: cart.map((item) => ({
             variantId: item.variantId,
             quantity: item.quantity,
@@ -1135,9 +1313,9 @@ function Checkout({ cart }: { cart: CartItem[] }) {
       <main className="page">
         <div className="empty-state">
           <h1>Checkout is waiting for a bag</h1>
-          <Link className="button dark" href="/shop">
-            Choose a design
-          </Link>
+          <a className="button dark" href="/shop">
+            Shop all
+          </a>
         </div>
       </main>
     );
@@ -1161,12 +1339,12 @@ function Checkout({ cart }: { cart: CartItem[] }) {
             Preparation begins only after verified payment. Courier delivery
             begins after dispatch.
           </p>
-          <Link
+          <a
             className="button dark"
             href={`/checkout/status?reference=${encodeURIComponent(confirmation.reference)}`}
           >
             Continue to payment status
-          </Link>
+          </a>
         </div>
       </main>
     );
@@ -1178,10 +1356,10 @@ function Checkout({ cart }: { cart: CartItem[] }) {
           <h1>Delivery details</h1>
           <p>
             Checkout without an account.{" "}
-            <Link href="/account">Sign in is optional.</Link>
+            <a href="/account">Sign in is optional.</a>
           </p>
         </div>
-        <span>Live payments remain disabled</span>
+        <span>Payments disabled in preview</span>
       </div>
       <form className="checkout-layout" onSubmit={submit} noValidate>
         <section className="checkout-form">
@@ -1217,6 +1395,20 @@ function Checkout({ cart }: { cart: CartItem[] }) {
             }
           </div>
           {field("landmark", "Landmark (optional)")}
+          <label>
+            Delivery zone
+            <select
+              value={deliveryZoneId}
+              onChange={(event) => setDeliveryZoneId(event.target.value)}
+              required
+            >
+              {deliveryZones.map((zone) => (
+                <option key={zone.id} value={zone.id}>
+                  {zone.name} - {formatNaira(zone.feeKobo)}
+                </option>
+              ))}
+            </select>
+          </label>
           <label>
             Order note <span>optional</span>
             <textarea
@@ -1392,9 +1584,9 @@ function PaymentStatus({
       <main className="page">
         <div className="empty-state">
           <h1>Payment reference missing</h1>
-          <Link className="button dark" href="/cart">
+          <a className="button dark" href="/cart">
             Return to bag
-          </Link>
+          </a>
         </div>
       </main>
     );
@@ -1472,48 +1664,180 @@ function PaymentStatus({
             )}
         </div>
         {confirmed && (
-          <Link className="button dark" href="/shop">
-            Continue shopping
-          </Link>
+          <div className="status-actions">
+            <a className="button dark" href="/track">
+              Track this order
+            </a>
+            <a className="button olive" href="/shop">
+              Continue shopping
+            </a>
+          </div>
         )}
       </div>
     </main>
   );
 }
 
+type AccountOrder = {
+  id: string;
+  order_number: string;
+  total_kobo: number;
+  fulfilment_status: string;
+  items: Array<{ title_snapshot: string; quantity: number }>;
+};
+type AuthConfig = {
+  enabled: boolean;
+  authorizationUrl?: string;
+  clientId?: string;
+  audience?: string;
+};
+const base64Url = (bytes: Uint8Array) =>
+  btoa(String.fromCharCode(...bytes))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replaceAll("=", "");
 function Account() {
+  const [config, setConfig] = useState<AuthConfig | null>(null);
+  const [email, setEmail] = useState("");
+  const [orders, setOrders] = useState<AccountOrder[]>([]);
+  const [message, setMessage] = useState("");
+  const loadAccount = useCallback(async () => {
+    const me = await fetch("/api/customer/me");
+    if (!me.ok) return false;
+    const body = (await me.json()) as { customer: { email: string } | null };
+    if (!body.customer) return false;
+    localStorage.setItem(CUSTOMER_CONNECTED_KEY, "1");
+    setEmail(body.customer.email);
+    const history = await fetch("/api/customer/orders");
+    if (history.ok)
+      setOrders(((await history.json()) as { orders: AccountOrder[] }).orders);
+    return true;
+  }, []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void fetch("/api/auth/config")
+        .then((response) => response.json() as Promise<AuthConfig>)
+        .then(setConfig);
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get("code");
+      const state = params.get("state");
+      const expectedState = sessionStorage.getItem("herliyah-oauth-state");
+      const verifier = sessionStorage.getItem("herliyah-oauth-verifier");
+      if (code && state && state === expectedState && verifier) {
+        void fetch("/api/auth/exchange", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            code,
+            verifier,
+            redirectUri: `${window.location.origin}/account`,
+          }),
+        })
+          .then(async (response) => {
+            if (!response.ok) throw new Error("authentication_failed");
+            sessionStorage.removeItem("herliyah-oauth-state");
+            sessionStorage.removeItem("herliyah-oauth-verifier");
+            window.history.replaceState(null, "", "/account");
+            await loadAccount();
+          })
+          .catch(() =>
+            setMessage("Sign-in could not be completed. Please try again."),
+          );
+      } else {
+        void loadAccount();
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadAccount]);
+  const signIn = async () => {
+    if (!config?.authorizationUrl || !config.clientId) return;
+    const verifier = base64Url(crypto.getRandomValues(new Uint8Array(48)));
+    const digest = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(verifier),
+    );
+    const state = base64Url(crypto.getRandomValues(new Uint8Array(24)));
+    sessionStorage.setItem("herliyah-oauth-verifier", verifier);
+    sessionStorage.setItem("herliyah-oauth-state", state);
+    const url = new URL(config.authorizationUrl);
+    url.searchParams.set("client_id", config.clientId);
+    url.searchParams.set("response_type", "code");
+    url.searchParams.set("redirect_uri", `${window.location.origin}/account`);
+    url.searchParams.set("scope", "openid email profile");
+    url.searchParams.set("code_challenge", base64Url(new Uint8Array(digest)));
+    url.searchParams.set("code_challenge_method", "S256");
+    url.searchParams.set("state", state);
+    if (config.audience) url.searchParams.set("audience", config.audience);
+    window.location.assign(url);
+  };
   return (
     <main className="page">
       <div className="page-intro">
-        <p className="eyebrow">Optional account · preview</p>
+        <p className="eyebrow">Optional account</p>
         <h1>Your HERLIYAH</h1>
         <p>
-          Guest checkout will always remain available. An account gathers
-          verified orders and saved designs.
+          Guest checkout always remains available. A verified account gathers
+          your orders and saved designs across devices.
         </p>
       </div>
       <div className="account-grid">
         <section className="status-panel">
           <h2>Order history</h2>
-          <div className="preview-order">
-            <span>Sample order</span>
-            <strong>#HLY-00241</strong>
-            <p>In production · updated 5 October 2026, 14:30 WAT</p>
-          </div>
-          <p className="review-note">
-            Managed sign-in and verified order claiming require provider setup.
-          </p>
+          {email ? (
+            orders.length ? (
+              orders.map((order) => (
+                <div className="preview-order" key={order.id}>
+                  <span>
+                    {order.items.map((item) => item.title_snapshot).join(", ")}
+                  </span>
+                  <strong>{order.order_number}</strong>
+                  <p>
+                    {order.fulfilment_status.replaceAll("_", " ")} -{" "}
+                    {formatNaira(order.total_kobo)}
+                  </p>
+                </div>
+              ))
+            ) : (
+              <p>No orders are linked to {email} yet.</p>
+            )
+          ) : (
+            <p>
+              Sign in with your verified email to see only orders belonging to
+              you.
+            </p>
+          )}
         </section>
         <section className="status-panel">
           <h2>Why create an account?</h2>
           <ul>
             <li>See owner-entered production updates</li>
             <li>Keep a wishlist across devices</li>
-            <li>Claim guest orders through a secure email link</li>
+            <li>Automatically link orders placed with your verified email</li>
           </ul>
-          <button className="button dark" disabled>
-            Sign in · setup required
-          </button>
+          {email ? (
+            <button
+              className="button dark"
+              onClick={() =>
+                void fetch("/api/auth/logout", { method: "POST" }).then(() => {
+                  localStorage.removeItem(CUSTOMER_CONNECTED_KEY);
+                  window.location.reload();
+                })
+              }
+            >
+              Sign out
+            </button>
+          ) : (
+            <button
+              className="button dark"
+              disabled={!config?.enabled}
+              onClick={() => void signIn()}
+            >
+              {config?.enabled
+                ? "Sign in securely"
+                : "Sign in - setup required"}
+            </button>
+          )}
+          {message && <p className="checkout-error">{message}</p>}
         </section>
       </div>
     </main>
@@ -1546,9 +1870,9 @@ function Wishlist({
           <p>
             Use the heart on any sample design to keep it here on this device.
           </p>
-          <Link className="button dark" href="/shop">
+          <a className="button dark" href="/shop">
             Browse designs
-          </Link>
+          </a>
         </div>
       )}
       <p className="simulation-strip">
@@ -1558,64 +1882,154 @@ function Wishlist({
     </main>
   );
 }
-function Tracking() {
+type TrackedOrder = {
+  order_number: string;
+  order_status: string;
+  fulfilment_status: string;
+  dispatch_min_date?: string;
+  dispatch_max_date?: string;
+  revised_dispatch_min_date?: string;
+  revised_dispatch_max_date?: string;
+  delay_message?: string;
+  courier_name?: string;
+  tracking_reference?: string;
+  tracking_url?: string;
+  payment?: { status: string };
+  items: Array<{ title_snapshot: string }>;
+};
+function LiveTracking() {
+  const [order, setOrder] = useState("");
+  const [token, setToken] = useState("");
+  const [result, setResult] = useState<TrackedOrder | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const saved = JSON.parse(
+        localStorage.getItem(CHECKOUT_SESSION_KEY) || "{}",
+      ) as { orderId?: string; accessToken?: string };
+      setOrder(saved.orderId || "");
+      setToken(saved.accessToken || "");
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+  const track = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError("");
+    const response = await fetch("/api/orders/track", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ order, token }),
+    });
+    if (!response.ok) {
+      setResult(null);
+      setError("The order identifier and private token did not match.");
+      return;
+    }
+    setResult(await response.json());
+  };
   const stages = [
-    "Payment verified",
-    "In production",
-    "Quality check",
-    "Ready to dispatch",
-    "Dispatched",
-    "Delivered",
+    "confirmed",
+    "in_preparation",
+    "ready_to_dispatch",
+    "dispatched",
+    "delivered",
   ];
+  const currentIndex = result ? stages.indexOf(result.fulfilment_status) : -1;
   return (
     <main className="page track-page">
       <div className="page-intro">
-        <p className="eyebrow">Guest order access · preview</p>
+        <p className="eyebrow">Private guest order access</p>
         <h1>Follow its progress</h1>
         <p>
-          Real guest links will use high-entropy tokens and never expose
-          customer data in the URL.
+          Enter the order identifier and high-entropy token saved at checkout. A
+          matching email or order number alone never grants access.
         </p>
       </div>
-      <section className="tracking-card">
-        <div className="tracking-top">
-          <div>
-            <span>Sample order #HLY-00241</span>
-            <h2>Ivie Tailored Set</h2>
+      <form className="tracking-form" onSubmit={track}>
+        <label>
+          Order ID or number
+          <input
+            value={order}
+            onChange={(event) => setOrder(event.target.value)}
+          />
+        </label>
+        <label>
+          Private access token
+          <input
+            value={token}
+            onChange={(event) => setToken(event.target.value)}
+          />
+        </label>
+        <button className="button dark" type="submit">
+          Track order
+        </button>
+      </form>
+      {error && <p className="checkout-error">{error}</p>}
+      {result && (
+        <section className="tracking-card">
+          <div className="tracking-top">
+            <div>
+              <span>{result.order_number}</span>
+              <h2>
+                {result.items.map((item) => item.title_snapshot).join(", ")}
+              </h2>
+              <p>
+                Original dispatch estimate:{" "}
+                {result.dispatch_min_date || "pending"}
+                {result.dispatch_max_date && ` to ${result.dispatch_max_date}`}.
+              </p>
+              {result.revised_dispatch_min_date && (
+                <p>
+                  Revised dispatch estimate: {result.revised_dispatch_min_date}
+                  {result.revised_dispatch_max_date &&
+                    ` to ${result.revised_dispatch_max_date}`}
+                  .{result.delay_message && ` ${result.delay_message}`}
+                </p>
+              )}
+            </div>
+            <strong>{result.fulfilment_status.replaceAll("_", " ")}</strong>
+          </div>
+          <p>Payment: {result.payment?.status || result.order_status}</p>
+          <ol>
+            {stages.map((stage, index) => (
+              <li
+                key={stage}
+                className={
+                  index < currentIndex
+                    ? "complete"
+                    : index === currentIndex
+                      ? "current"
+                      : ""
+                }
+              >
+                <span>{index + 1}</span>
+                <div>
+                  <strong>{stage.replaceAll("_", " ")}</strong>
+                </div>
+              </li>
+            ))}
+          </ol>
+          <div className="delivery-separation">
+            <strong>Preparation and dispatch</strong>
             <p>
-              Original promise: ready to dispatch in 14–18 business days after
-              verified payment.
+              HERLIYAH records production progress and the dispatch promise
+              above.
+            </p>
+            <strong>Courier delivery</strong>
+            <p>
+              Begins after dispatch.
+              {result.courier_name && ` ${result.courier_name}`}
+              {result.tracking_reference && ` - ${result.tracking_reference}`}
+              {result.tracking_url && (
+                <>
+                  {" "}
+                  - <a href={result.tracking_url}>Courier tracking</a>
+                </>
+              )}
             </p>
           </div>
-          <strong>In production</strong>
-        </div>
-        <ol>
-          {stages.map((s, i) => (
-            <li
-              key={s}
-              className={i < 2 ? "complete" : i === 2 ? "current" : ""}
-            >
-              <span>{i + 1}</span>
-              <div>
-                <strong>{s}</strong>
-                {i < 2 && (
-                  <small>
-                    {i === 0
-                      ? "2 October 2026, 10:12 WAT"
-                      : "5 October 2026, 14:30 WAT"}
-                  </small>
-                )}
-              </div>
-            </li>
-          ))}
-        </ol>
-        <div className="delivery-separation">
-          <strong>Preparation</strong>
-          <p>HERLIYAH updates the stages above manually.</p>
-          <strong>Courier delivery</strong>
-          <p>Begins after dispatch. No live GPS tracking is implied.</p>
-        </div>
-      </section>
+        </section>
+      )}
     </main>
   );
 }
@@ -1725,9 +2139,9 @@ function NotFound() {
         <span>H</span>
         <h1>This page isn’t in the sample store.</h1>
         <p>The collection may have moved, or the link is incomplete.</p>
-        <Link className="button dark" href="/shop">
+        <a className="button dark" href="/shop">
           Return to shop
-        </Link>
+        </a>
       </div>
     </main>
   );
@@ -1735,8 +2149,8 @@ function NotFound() {
 
 export default function Storefront() {
   const path = usePathname();
-  const [cart, setCart] = useStored<CartItem[]>(CART_KEY, []),
-    [wish, setWish] = useStored<string[]>(WISH_KEY, []);
+  const [cart, setCart] = useStored<CartItem[]>(CART_KEY, EMPTY_CART),
+    [wish, setWish] = useStored<string[]>(WISH_KEY, EMPTY_WISHLIST);
   const [catalog, setCatalog] = useState<Product[]>([]),
     [catalogState, setCatalogState] = useState<"loading" | "ready" | "error">(
       "loading",
@@ -1761,8 +2175,45 @@ export default function Storefront() {
       active = false;
     };
   }, []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void fetch("/api/customer/me").then(async (identity) => {
+        const session = (await identity.json()) as { customer: unknown | null };
+        if (!session.customer) {
+          localStorage.removeItem(CUSTOMER_CONNECTED_KEY);
+          return;
+        }
+        localStorage.setItem(CUSTOMER_CONNECTED_KEY, "1");
+        const response = await fetch("/api/customer/wishlist");
+        if (!response.ok) return;
+        const remote = ((await response.json()) as { productIds: string[] })
+          .productIds;
+        setWish((local) => {
+          const merged = [...new Set([...remote, ...local])];
+          void fetch("/api/customer/wishlist", {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ productIds: merged }),
+          });
+          return merged;
+        });
+      });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [setWish]);
   const toggle = (id: string) =>
-    setWish((x) => (x.includes(id) ? x.filter((v) => v !== id) : [...x, id]));
+    setWish((current) => {
+      const next = current.includes(id)
+        ? current.filter((value) => value !== id)
+        : [...current, id];
+      if (localStorage.getItem(CUSTOMER_CONNECTED_KEY))
+        void fetch("/api/customer/wishlist", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ productIds: next }),
+        });
+      return next;
+    });
   const add = (p: Product, v: string, q: number) =>
     setCart((items) => {
       const found = items.find((i) => i.variantId === v);
@@ -1827,7 +2278,7 @@ export default function Storefront() {
         ) : path === "/wishlist" ? (
           <Wishlist wish={wish} toggle={toggle} />
         ) : path === "/track" ? (
-          <Tracking />
+          <LiveTracking />
         ) : admin ? (
           <Admin />
         ) : (

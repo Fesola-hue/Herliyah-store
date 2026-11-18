@@ -1,3 +1,5 @@
 # Local Worker secrets. Copy to .dev.vars and never commit the real file.
 PAYSTACK_SECRET_KEY=
 EMAIL_PROVIDER_API_KEY=
+ADMIN_PREVIEW_TOKEN=replace-with-at-least-16-random-characters
+CUSTOMER_SESSION_SECRET=replace-with-at-least-32-random-characters

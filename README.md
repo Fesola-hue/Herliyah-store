@@ -9,7 +9,7 @@ The UI uses the Next.js App Router API, React and TypeScript, but it is compiled
 - requests under `/api/*` go to the Hono API in `server/api.ts`;
 - all other requests go to Vinext's Next-compatible fetch handler;
 - D1 is bound as `DB`, and R2 is bound as `PRODUCT_IMAGES`;
-- a five-minute scheduled Worker job reconciles expired payment attempts before releasing capacity.
+- a five-minute scheduled Worker job reconciles expired payment attempts, releases safe-to-release capacity, and retries transactional email.
 
 This is more specific than the framework-neutral deployment description in `PRODUCT.md`, but it supports the required Cloudflare, D1, R2, Hono and App Router behaviours. There is no product reason to rewrite it. Locally and after deployment, the storefront and API run in the same Worker process and origin. Separate frontend/API startup commands are therefore neither needed nor correct for this repository.
 
@@ -19,9 +19,9 @@ This is more specific than the framework-neutral deployment description in `PROD
 | ------------ | ---------------------- | ---------------------------------------------- | ---------------------------------- |
 | `preview`    | D1 sample rows allowed | Local simulation only; cannot contact Paystack | Design and local end-to-end checks |
 | `test`       | D1 rows allowed        | Paystack test keys only (`sk_test_`)           | Staging payment verification       |
-| `production` | Sample rows hidden     | Checkout launch gate closed                    | Not launch-ready                   |
+| `production` | Sample rows hidden     | Disabled unless an approved live provider gate is complete | Launch after documented setup |
 
-Live Paystack keys are rejected by the current adapter. Production checkout is intentionally disabled.
+Production checkout defaults to disabled. It opens only when `PAYMENT_PROVIDER=paystack`, `PAYMENT_PROVIDER_VERIFIED=true`, and an `sk_live_` secret are all present; test and live key prefixes cannot be mixed.
 
 ## Local setup
 
@@ -55,16 +55,22 @@ Non-secret settings belong in `.env.local` locally and Worker variables when dep
 
 - `APP_MODE`: `preview`, `test` or `production`.
 - `PUBLIC_APP_ORIGIN`: public origin used for payment callbacks; local default is `http://localhost:5173`.
-- `ADMIN_AUTH_MODE`: leave `disabled` until Cloudflare Access is configured; then use `cloudflare-access`.
+- `PAYMENT_PROVIDER`: `paystack`. Paystack is the approved HERLIYAH launch provider.
+- `PAYMENT_PROVIDER_VERIFIED`: keep `false` until staging callback, webhook, amount/currency/environment, and reconciliation tests are approved.
+- `ADMIN_AUTH_MODE`: use `preview-token` only for localhost preview; deployed environments use `cloudflare-access`.
 - `CF_ACCESS_TEAM_DOMAIN`: full Access issuer, for example `https://team-name.cloudflareaccess.com`.
 - `CF_ACCESS_AUD`: Access application audience tag.
 - `ADMIN_EMAIL_ALLOWLIST`: comma-separated, lower/upper case insensitive owner email list.
-- `EMAIL_FROM`: reserved for the future email provider.
+- `EMAIL_PROVIDER`: `disabled` or `resend`.
+- `EMAIL_FROM`: verified transactional sender.
+- `CUSTOMER_AUTH_ISSUER`, `CUSTOMER_AUTH_JWKS_URL`, `CUSTOMER_AUTH_AUDIENCE`, `CUSTOMER_AUTH_CLIENT_ID`, `CUSTOMER_AUTHORIZATION_URL`, `CUSTOMER_AUTH_TOKEN_URL`: provider-neutral OIDC Authorization Code + PKCE settings.
 
 Secrets belong in ignored `.dev.vars` locally and Worker secrets when deployed:
 
 - `PAYSTACK_SECRET_KEY`: an `sk_test_` key in test mode. Live keys are not accepted.
-- `EMAIL_PROVIDER_API_KEY`: reserved; no email provider is connected yet.
+- `EMAIL_PROVIDER_API_KEY`: Resend API key when email is enabled.
+- `ADMIN_PREVIEW_TOKEN`: random local-only owner token of at least 16 characters.
+- `CUSTOMER_SESSION_SECRET`: random value of at least 32 characters used to sign HTTP-only customer sessions.
 
 Never commit `.env.local`, `.dev.vars`, or provider credentials. The tracked example files contain names only.
 
@@ -96,7 +102,7 @@ ChatGPT-host identity headers are not trusted or used. Admin API routes are clos
 3. Set `ADMIN_AUTH_MODE=cloudflare-access`, `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`, and `ADMIN_EMAIL_ALLOWLIST`.
 4. Confirm Access sends `Cf-Access-Jwt-Assertion` and test denial with no token, the wrong audience and an email outside the allowlist.
 
-The API independently validates the Access JWT signature, issuer and audience against Cloudflare's JWKS, then enforces the email allowlist. The `/admin` page deliberately remains a locked explanation until a real dashboard session and UI are implemented; authenticated product/capacity/image API operations exist but are not represented as a finished admin tool.
+The API independently validates the Access JWT signature, issuer and audience against Cloudflare's JWKS, then enforces the email allowlist. The `/admin` dashboard supports product lifecycle, image metadata/order/cover, variants and capacity, order fulfilment, courier data, audit history, settings, delivery zones, policies, and homepage features. For local preview only, `preview-token` provides safe dashboard access and is rejected on non-local hostnames.
 
 ## Cloudflare deployment
 
@@ -109,13 +115,14 @@ npm run start
 
 Before a real deployment, provision separate staging/production D1 and R2 resources, replace placeholder resource IDs in the generated/hosting configuration through the hosting workflow, apply every versioned migration, configure variables/secrets and Access, and register the Paystack test webhook. Load `db/seed.sql` only in non-production. The scheduled trigger is `*/5 * * * *`.
 
-## Current limitations
+## Operational status and launch dependencies
 
-- The checked-in catalog, pictures, prices, capacity and Lagos delivery rule are samples; production filters sample products out.
-- A Paystack test credential and reachable staging webhook are still required for provider-level verification.
-- Customer accounts, cross-device wishlists, order claiming, courier tracking and email sending remain visual/demo or schema-only work.
-- The admin API is protected, but the owner dashboard UI is intentionally locked and incomplete.
-- Rate limiting, monitoring/alerts, email retries, backup recovery drills, physical-device Safari testing and final accessibility review remain launch work.
-- Real products, owner-approved delivery/mixed-basket rules, policies, photography and credentials are launch dependencies.
+Implemented flows include protected product administration, publication validation, variant capacity, product media, searchable orders, payment/fulfilment separation, courier updates, immutable order snapshots, guest tracking, optional OIDC accounts, scoped order history, cross-device wishlists, retryable email, delivery/settings management, and ordered homepage features.
+
+Still external: Cloudflare Access configuration, staging/production D1 and R2, a customer OIDC application, a verified Resend sender/key, and a Paystack test key plus reachable webhook. Production payment defaults to disabled and requires the explicit verified-provider gate above. Provider simulation is limited to preview and is stored as provider `simulation`, never Paystack.
+
+Still owner-approved: mixed-basket rule, delivery zones/fees/estimates, contact details, size guide, and policies. Paystack is the chosen launch provider. Real product content and photography must be entered through admin. Production filters all sample products and `db/seed.sql` must never be loaded there.
+
+See `LAUNCH_CHECKLIST.md` for the four-part handoff and `OWNER_GUIDE.md` for daily operation.
 
 See `VALIDATION.md` for checks actually run and `OWNER_GUIDE.md` for operational setup.

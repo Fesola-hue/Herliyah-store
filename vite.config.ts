@@ -43,10 +43,20 @@ export default defineConfig(async ({ command, mode }) => {
     [
       "APP_MODE",
       "PUBLIC_APP_ORIGIN",
+      "PAYMENT_PROVIDER",
+      "PAYMENT_PROVIDER_VERIFIED",
       "ADMIN_AUTH_MODE",
       "CF_ACCESS_TEAM_DOMAIN",
       "CF_ACCESS_AUD",
       "ADMIN_EMAIL_ALLOWLIST",
+      "EMAIL_PROVIDER",
+      "EMAIL_FROM",
+      "CUSTOMER_AUTH_ISSUER",
+      "CUSTOMER_AUTH_JWKS_URL",
+      "CUSTOMER_AUTH_AUDIENCE",
+      "CUSTOMER_AUTH_CLIENT_ID",
+      "CUSTOMER_AUTHORIZATION_URL",
+      "CUSTOMER_AUTH_TOKEN_URL",
     ].flatMap((key) => (localEnv[key] ? [[key, localEnv[key]]] : [])),
   );
   // Use Miniflare's local Request.cf placeholder unless fetching is requested.

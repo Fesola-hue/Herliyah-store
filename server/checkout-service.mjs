@@ -21,6 +21,43 @@ export function makeSecretToken() {
   return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+function lagosDate(value) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Africa/Lagos", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date(value));
+  const part = (type) => parts.find((item) => item.type === type)?.value;
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+function addPreparationDays(start, days, basis) {
+  const date = new Date(`${start}T12:00:00Z`);
+  let remaining = Number(days);
+  while (remaining > 0) {
+    date.setUTCDate(date.getUTCDate() + 1);
+    const weekday = date.getUTCDay();
+    if (basis !== "business" || (weekday !== 0 && weekday !== 6)) remaining -= 1;
+  }
+  return date.toISOString().slice(0, 10);
+}
+async function dispatchSnapshotStatements(db, orderId, confirmedAt) {
+  const items = await db.prepare("SELECT id,lead_time_snapshot_json FROM order_items WHERE order_id=?").bind(orderId).all();
+  const paymentDate = lagosDate(confirmedAt), statements = [], minimums = [], maximums = [];
+  for (const item of items.results) {
+    const lead = JSON.parse(String(item.lead_time_snapshot_json));
+    const minimum = lead.dispatchDate ? String(lead.dispatchDate) : addPreparationDays(paymentDate, Number(lead.min), lead.basis);
+    const maximum = lead.dispatchDate ? String(lead.dispatchDate) : addPreparationDays(paymentDate, Number(lead.max), lead.basis);
+    minimums.push(minimum);
+    maximums.push(maximum);
+    statements.push(db.prepare("UPDATE order_items SET original_dispatch_window_json=? WHERE id=?").bind(JSON.stringify({
+      minDate: minimum, maxDate: maximum, calculatedAt: confirmedAt, timeZone: "Africa/Lagos",
+    }), item.id));
+  }
+  return {
+    statements,
+    minDate: minimums.sort().at(-1) || null,
+    maxDate: maximums.sort().at(-1) || null,
+  };
+}
+
 function aggregateLines(lines) {
   if (!Array.isArray(lines) || lines.length === 0)
     throw new CheckoutError("empty_basket");
@@ -68,7 +105,7 @@ export async function getCatalog(db, mode = "preview") {
   const sampleClause = mode === "production" ? "AND p.is_sample=0" : "";
   const rows = await db
     .prepare(
-      `SELECT p.id,p.slug,p.title,p.description,p.category,p.price_kobo,p.is_sample,p.preparation_min_days,p.preparation_max_days,p.preparation_day_basis,v.id AS variant_id,v.size,v.colour,v.capacity,v.reserved_quantity,v.committed_quantity,v.preorder_open,i.object_key,i.alt_text,i.sort_order,i.is_cover FROM products p JOIN variants v ON v.product_id=p.id LEFT JOIN product_images i ON i.product_id=p.id WHERE p.status='published' ${sampleClause} ORDER BY p.created_at,p.id,v.colour,v.size,i.sort_order`,
+      `SELECT p.id,p.slug,p.title,p.description,p.category,p.price_kobo,p.is_sample,p.care_instructions,p.measurements_json,p.size_guide_key,p.specific_dispatch_date,p.featured_order,p.preparation_min_days,p.preparation_max_days,p.preparation_day_basis,v.id AS variant_id,v.size,v.colour,v.capacity,v.reserved_quantity,v.committed_quantity,v.preorder_open,i.object_key,i.alt_text,i.sort_order,i.is_cover,i.colour AS image_colour FROM products p JOIN variants v ON v.product_id=p.id LEFT JOIN product_images i ON i.product_id=p.id WHERE p.status='published' ${sampleClause} ORDER BY CASE WHEN p.featured_order IS NULL THEN 1 ELSE 0 END,p.featured_order,p.created_at,p.id,v.colour,v.size,i.sort_order`,
     )
     .all();
   const byId = new Map();
@@ -87,10 +124,14 @@ export async function getCatalog(db, mode = "preview") {
         published: true,
         sample: Boolean(row.is_sample),
         accent: row.colour,
+        careInstructions: row.care_instructions,
+        measurements: JSON.parse(String(row.measurements_json || "{}")),
+        sizeGuideKey: row.size_guide_key,
         preparation: {
           min: Number(row.preparation_min_days),
           max: Number(row.preparation_max_days),
           basis: `${row.preparation_day_basis} days`,
+          dispatchDate: row.specific_dispatch_date || null,
         },
         variants: [],
       };
@@ -117,7 +158,7 @@ export async function getCatalog(db, mode = "preview") {
         product.images.push({
           src,
           alt: row.alt_text || `Image for ${row.title}`,
-          colour: row.colour,
+          colour: row.image_colour || undefined,
         });
       if (!product.image || row.is_cover) product.image = src;
     }
@@ -137,7 +178,7 @@ export async function quoteCheckout(db, input, mode = "preview") {
   const sampleClause = mode === "production" ? "AND p.is_sample=0" : "";
   const result = await db
     .prepare(
-      `SELECT v.id AS variant_id,v.sku,v.size,v.colour,v.capacity,v.reserved_quantity,v.committed_quantity,v.preorder_open,p.id AS product_id,p.title,p.price_kobo,p.status,p.is_sample,p.preparation_min_days,p.preparation_max_days,p.preparation_day_basis,(SELECT object_key FROM product_images WHERE product_id=p.id ORDER BY is_cover DESC,sort_order LIMIT 1) AS object_key FROM variants v JOIN products p ON p.id=v.product_id WHERE v.id IN (${placeholders}) ${sampleClause}`,
+      `SELECT v.id AS variant_id,v.sku,v.size,v.colour,v.capacity,v.reserved_quantity,v.committed_quantity,v.preorder_open,p.id AS product_id,p.title,p.price_kobo,p.status,p.is_sample,p.preparation_min_days,p.preparation_max_days,p.preparation_day_basis,p.specific_dispatch_date,(SELECT object_key FROM product_images WHERE product_id=p.id ORDER BY is_cover DESC,sort_order LIMIT 1) AS object_key FROM variants v JOIN products p ON p.id=v.product_id WHERE v.id IN (${placeholders}) ${sampleClause}`,
     )
     .bind(...lines.map((line) => line.variantId))
     .all();
@@ -177,16 +218,23 @@ export async function quoteCheckout(db, input, mode = "preview") {
       preparationMinDays: Number(row.preparation_min_days),
       preparationMaxDays: Number(row.preparation_max_days),
       preparationDayBasis: row.preparation_day_basis,
+      specificDispatchDate: row.specific_dispatch_date || null,
     });
   }
   const zoneId = input.deliveryZoneId || "lagos";
   const zone = await db
     .prepare(
-      "SELECT id,name,fee_kobo,transit_min_days,transit_max_days FROM delivery_zones WHERE id=? AND active=1",
+      "SELECT id,name,fee_kobo,transit_min_days,transit_max_days,transit_day_basis FROM delivery_zones WHERE id=? AND active=1",
     )
     .bind(zoneId)
     .first();
   if (!zone) throw new CheckoutError("unsupported_delivery_zone", 422);
+  const mixedBasket = await db
+    .prepare("SELECT value_json FROM store_settings WHERE key='mixed_basket_policy'")
+    .first();
+  const shippingPolicy = mixedBasket
+    ? JSON.parse(String(mixedBasket.value_json))
+    : { mode: "ship_together" };
   const subtotalKobo = items.reduce((sum, item) => sum + item.lineTotalKobo, 0),
     deliveryFeeKobo = Number(zone.fee_kobo);
   return {
@@ -200,8 +248,10 @@ export async function quoteCheckout(db, input, mode = "preview") {
       name: zone.name,
       transitMinDays: Number(zone.transit_min_days),
       transitMaxDays: Number(zone.transit_max_days),
+      transitDayBasis: zone.transit_day_basis || "business",
     },
-    courierEstimate: `${zone.transit_min_days}–${zone.transit_max_days} business days after dispatch`,
+    shippingPolicy,
+    courierEstimate: `${zone.transit_min_days}–${zone.transit_max_days} ${zone.transit_day_basis || "business"} days after dispatch`,
   };
 }
 
@@ -217,7 +267,7 @@ async function existingCheckout(db, idempotencyKey) {
 export async function createCheckout(
   db,
   input,
-  { mode = "preview", now = new Date() } = {},
+  { mode = "preview", provider = mode === "preview" ? "simulation" : "paystack", now = new Date() } = {},
 ) {
   if (
     typeof input.idempotencyKey !== "string" ||
@@ -260,7 +310,10 @@ export async function createCheckout(
         quote.subtotalKobo,
         quote.deliveryFeeKobo,
         quote.totalKobo,
-        JSON.stringify(quote.deliveryZone),
+        JSON.stringify({
+          zone: quote.deliveryZone,
+          mixedBasketPolicy: quote.shippingPolicy,
+        }),
         tokenHash,
         createdAt,
         createdAt,
@@ -285,6 +338,7 @@ export async function createCheckout(
             max: item.preparationMaxDays,
             basis: item.preparationDayBasis,
             trigger: "verified_payment",
+            dispatchDate: item.specificDispatchDate,
           }),
           JSON.stringify({ status: "calculated_after_payment" }),
         ),
@@ -308,14 +362,16 @@ export async function createCheckout(
     ]),
     db
       .prepare(
-        "INSERT INTO payment_attempts (id,order_id,provider,reference,idempotency_key,amount_kobo,currency,environment,status,created_at,updated_at) VALUES (?,?,'paystack',?,?,?,'NGN','test','initiated',?,?)",
+        "INSERT INTO payment_attempts (id,order_id,provider,reference,idempotency_key,amount_kobo,currency,environment,status,created_at,updated_at) VALUES (?,?,?,?,?,?,'NGN',?,'initiated',?,?)",
       )
       .bind(
         attemptId,
         orderId,
+        provider,
         reference,
         input.idempotencyKey,
         quote.totalKobo,
+        mode === "production" ? "live" : "test",
         createdAt,
         createdAt,
       ),
@@ -421,23 +477,39 @@ export async function getCheckoutByReference(db, reference) {
     .first();
 }
 
-export async function getGuestOrder(db, orderId, accessToken) {
+export async function getGuestOrder(db, orderIdOrNumber, accessToken) {
   if (!accessToken) return null;
   const tokenHash = await sha256Hex(accessToken);
   const order = await db
     .prepare(
-      "SELECT id,order_number,email,subtotal_kobo,delivery_kobo,total_kobo,currency,order_status,fulfilment_status,created_at,updated_at FROM orders WHERE id=? AND guest_access_token_hash=?",
+      "SELECT id,order_number,email,full_name,phone,address_snapshot_json,subtotal_kobo,delivery_kobo,total_kobo,currency,order_status,fulfilment_status,delivery_rule_snapshot_json,dispatch_min_date,dispatch_max_date,revised_dispatch_min_date,revised_dispatch_max_date,delay_message,courier_name,tracking_reference,tracking_url,created_at,updated_at FROM orders WHERE (id=? OR order_number=?) AND guest_access_token_hash=?",
     )
-    .bind(orderId, tokenHash)
+    .bind(orderIdOrNumber, orderIdOrNumber, tokenHash)
     .first();
   if (!order) return null;
-  const items = await db
-    .prepare(
-      "SELECT quantity,title_snapshot,size_snapshot,colour_snapshot,unit_price_kobo,lead_time_snapshot_json FROM order_items WHERE order_id=?",
-    )
-    .bind(orderId)
-    .all();
-  return { ...order, items: items.results };
+  const [items, events, payment] = await db.batch([
+    db
+      .prepare(
+        "SELECT quantity,title_snapshot,size_snapshot,colour_snapshot,unit_price_kobo,lead_time_snapshot_json,original_dispatch_window_json FROM order_items WHERE order_id=?",
+      )
+      .bind(order.id),
+    db
+      .prepare(
+        "SELECT dimension,to_status,customer_message,created_at FROM order_status_events WHERE order_id=? ORDER BY created_at",
+      )
+      .bind(order.id),
+    db
+      .prepare(
+        "SELECT provider,status,reference,updated_at FROM payment_attempts WHERE order_id=? ORDER BY created_at DESC LIMIT 1",
+      )
+      .bind(order.id),
+  ]);
+  return {
+    ...order,
+    items: items.results,
+    events: events.results,
+    payment: payment.results[0] || null,
+  };
 }
 
 export async function applyVerifiedPayment(
@@ -447,7 +519,7 @@ export async function applyVerifiedPayment(
 ) {
   const attempt = await db
     .prepare(
-      "SELECT id,order_id,amount_kobo,currency,environment,status FROM payment_attempts WHERE reference=?",
+      "SELECT id,order_id,provider,amount_kobo,currency,environment,status FROM payment_attempts WHERE reference=?",
     )
     .bind(verified.reference)
     .first();
@@ -517,6 +589,7 @@ export async function applyVerifiedPayment(
     return { status: "payment_exception", replayed: false };
   }
   const now = new Date().toISOString();
+  const dispatch = await dispatchSnapshotStatements(db, attempt.order_id, now);
   const allocation =
     reservation.status === "active"
       ? rows.results.map((row) =>
@@ -536,6 +609,7 @@ export async function applyVerifiedPayment(
   try {
     await db.batch([
       ...allocation,
+      ...dispatch.statements,
       db
         .prepare("UPDATE reservations SET status='consumed' WHERE id=?")
         .bind(reservation.id),
@@ -546,9 +620,9 @@ export async function applyVerifiedPayment(
         .bind(JSON.stringify(verified), now, attempt.id),
       db
         .prepare(
-          "UPDATE orders SET order_status='confirmed',fulfilment_status='awaiting_production',updated_at=? WHERE id=?",
+          "UPDATE orders SET order_status='confirmed',fulfilment_status='awaiting_production',dispatch_min_date=?,dispatch_max_date=?,updated_at=? WHERE id=?",
         )
-        .bind(now, attempt.order_id),
+        .bind(dispatch.minDate, dispatch.maxDate, now, attempt.order_id),
       db
         .prepare(
           "INSERT INTO order_status_events (id,order_id,dimension,from_status,to_status,customer_message,created_by,created_at) VALUES (?,?, 'order',?,'confirmed','Payment verified and preorder capacity allocated.','system',?)",
@@ -561,22 +635,25 @@ export async function applyVerifiedPayment(
         ),
       db
         .prepare(
-          "INSERT OR IGNORE INTO notification_outbox (id,event_key,event_type,payload_json,status,attempts,created_at) VALUES (?,?, 'order.confirmed',?,'pending',0,?)",
+          "INSERT OR IGNORE INTO notification_outbox (id,event_key,event_type,payload_json,status,attempts,next_attempt_at,created_at,updated_at) VALUES (?,?, 'order.confirmed',?,'pending',0,?,?,?)",
         )
         .bind(
           crypto.randomUUID(),
           `order.confirmed:${attempt.order_id}`,
           JSON.stringify({ orderId: attempt.order_id }),
           now,
+          now,
+          now,
         ),
       ...(eventId
         ? [
             db
               .prepare(
-                "INSERT INTO payment_events (id,provider,provider_event_id,reference,event_type,payload_hash,outcome,created_at) VALUES (?,'paystack',?,?,?,?, 'confirmed',?)",
+                "INSERT INTO payment_events (id,provider,provider_event_id,reference,event_type,payload_hash,outcome,created_at) VALUES (?,?,?,?,?,?, 'confirmed',?)",
               )
               .bind(
                 crypto.randomUUID(),
+                attempt.provider,
                 eventId,
                 verified.reference,
                 eventType,
@@ -637,10 +714,11 @@ async function markPaymentException(
       ? [
           db
             .prepare(
-              "INSERT OR IGNORE INTO payment_events (id,provider,provider_event_id,reference,event_type,payload_hash,outcome,created_at) VALUES (?,'paystack',?,?,?,?, 'payment_exception',?)",
+              "INSERT OR IGNORE INTO payment_events (id,provider,provider_event_id,reference,event_type,payload_hash,outcome,created_at) VALUES (?,?,?,?,?,?, 'payment_exception',?)",
             )
             .bind(
               crypto.randomUUID(),
+              attempt.provider,
               eventId,
               verified.reference,
               eventType,

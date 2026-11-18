@@ -21,6 +21,10 @@ const refundsMigration = await readFile(
   new URL("../drizzle/0002_refunds.sql", import.meta.url),
   "utf8",
 );
+const operationsMigration = await readFile(
+  new URL("../drizzle/0003_store_operations.sql", import.meta.url),
+  "utf8",
+);
 const seed = await readFile(new URL("../db/seed.sql", import.meta.url), "utf8");
 const customer = {
   fullName: "Test Customer",
@@ -65,6 +69,7 @@ async function database() {
     await executeSql(db, migration);
     await executeSql(db, checkoutMigration);
     await executeSql(db, refundsMigration);
+    await executeSql(db, operationsMigration);
     await executeSql(db, seed);
     return { db, dispose: () => mf.dispose() };
   } catch (error) {

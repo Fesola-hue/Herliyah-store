@@ -6,7 +6,8 @@ import {
   reconcileExpiredPayments,
   releaseExpiredReservations,
 } from "../server/checkout-service.mjs";
-import { PaystackTestAdapter } from "../server/payment-adapter";
+import { PaystackAdapter } from "../server/payment-adapter";
+import { processNotificationOutbox } from "../server/notification-service";
 
 export default {
   fetch(
@@ -51,12 +52,25 @@ export default {
   ) {
     if (!env.DB) return;
     const mode = env.APP_MODE ?? "preview";
+    ctx.waitUntil(processNotificationOutbox(env));
     if (mode === "preview") {
       ctx.waitUntil(releaseExpiredReservations(env.DB));
       return;
     }
-    if (mode === "test" && env.PAYSTACK_SECRET_KEY?.startsWith("sk_test_")) {
-      const adapter = new PaystackTestAdapter(env.PAYSTACK_SECRET_KEY);
+    const paystackEnvironment =
+      mode === "test" && env.PAYSTACK_SECRET_KEY?.startsWith("sk_test_")
+        ? "test"
+        : mode === "production" &&
+            env.PAYMENT_PROVIDER === "paystack" &&
+            env.PAYMENT_PROVIDER_VERIFIED === "true" &&
+            env.PAYSTACK_SECRET_KEY?.startsWith("sk_live_")
+          ? "live"
+          : null;
+    if (paystackEnvironment && env.PAYSTACK_SECRET_KEY) {
+      const adapter = new PaystackAdapter(
+        env.PAYSTACK_SECRET_KEY,
+        paystackEnvironment,
+      );
       ctx.waitUntil(
         reconcileExpiredPayments(env.DB, (reference: string) =>
           adapter.verify(reference),
